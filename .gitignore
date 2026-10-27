@@ -1,0 +1,10 @@
+.env
+data/
+logs/
+debug/
+payment_url.txt
+__pycache__/
+*.py[cod]
+.venv/
+.tools/
+.pytest_cache/
