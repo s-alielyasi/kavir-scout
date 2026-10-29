@@ -372,3 +372,38 @@ core tests passed**; config and Git whitespace checks passed. There are now 106
 permanent tests; this is separate from the earlier complete 103-test run. No new
 live login/SMS was triggered for the headless configuration change. Real headless
 store login and the complete morning session remain unverified.
+
+## Pre-push project review — 2026-10-30
+
+Reviewed the single `feature/telegram-app` worktree, current source/documentation,
+outgoing commits and the fetched origin branch. The worktree started clean and
+had no remote divergence. Private configuration remained headless, direct to
+the store, proxied for Telegram and observation-only (`DRY_RUN=true`,
+`LIVE_CHECKOUT_APPROVED=false`). No unresolved order marker was present. The
+existing bot process retained its runtime lock; this review did not restart,
+arm or initiate a live workflow.
+
+Full permanent suite:
+
+```bash
+TEST_BROWSER_CHANNEL=chrome .venv/bin/python -m unittest discover -v
+```
+
+**106 tests passed in 152.373 seconds** on CPython 3.12.16, Playwright 1.64.1 and
+installed Google Chrome 156.0.8078.47. This complete run includes direct/system
+browser modes, hidden-browser manual prompts and continued unavailable/absent
+inventory monitoring through the daily cutoff. Browser fixtures use temporary
+profiles and synthetic inputs, not actual bot credentials or merchant requests.
+
+Config checks for both entry points, compileall, Python 3.11 grammar parsing,
+runtime imports, dependency consistency and exact installed constraints, Bash
+syntax, local Markdown paths, LF and Git whitespace checks passed. Audited the
+tracked tree and outgoing commit contents for the configured Telegram token,
+owner IDs and private runtime paths; none was included. `.env` remained ignored
+with mode 0600, and private installation/profile data was preserved.
+
+Only current implementation status and this dated evidence needed updates.
+Real headless store login, a complete morning session, browser-written personal
+data audit, current checkout selectors and a usable real payment handoff remain
+pending. This review does not enable live ordering, validate Windows/native
+Python 3.11 or constitute an online dependency vulnerability audit.
