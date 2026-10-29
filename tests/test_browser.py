@@ -254,6 +254,27 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
             cookies = await context.cookies('https://kavirtire.ir')
             self.assertIn('fixture', [item['name'] for item in cookies])
 
+    async def test_direct_browser_overrides_proxy_without_changing_process_environment(self):
+        from playwright.async_api import BrowserType
+        from kavirtire.browser import persistent_browser
+        import os
+        original = BrowserType.launch_persistent_context
+        observed = []
+        async def launch(browser_type, *args, **kwargs):
+            observed.append(kwargs.get('args', []))
+            return await original(browser_type, *args, **kwargs)
+        with patch.dict(os.environ, {'HTTPS_PROXY': 'http://127.0.0.1:1'}), \
+             patch.object(BrowserType, 'launch_persistent_context', launch):
+            for direct in (True, False):
+                config = replace(self.config, headless=True, session_backup=False,
+                    browser_direct_connection=direct,
+                    user_data_dir=self.config.root / ('direct' if direct else 'system'))
+                async with persistent_browser(config) as (context, page):
+                    await page.set_content('<title>Local routing check</title>')
+                    self.assertEqual(await page.title(), 'Local routing check')
+                self.assertEqual('--no-proxy-server' in observed[-1], direct)
+                self.assertEqual(os.environ['HTTPS_PROXY'], 'http://127.0.0.1:1')
+
     async def test_login_national_id_and_terminal_otp(self):
         config = self.config
         login = Login(self.page, config, self.guard, self.secrets)

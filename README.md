@@ -154,6 +154,7 @@ The obsolete `NATIONAL_ID` setting is ignored.
 | `TARGET_PRODUCT`, `TARGET_SIZE`, `TARGET_QUANTITY` | Confirmed model, size and quantity 2 |
 | `HEADLESS` | `false`; visible browser for manual steps |
 | `BROWSER_CHANNEL` | Empty for bundled Chromium; `chrome` for installed Chrome |
+| `BROWSER_DIRECT_CONNECTION` | `true`; store browser ignores desktop HTTP/SOCKS proxy settings |
 | `USER_DATA_DIR` | Bot example: `./data/telegram_profile` |
 | `TELEGRAM_PROXY_URL` | Optional HTTP(S) proxy for both Telegram HTTP clients; does not configure the store browser |
 | `DRY_RUN`, `LIVE_CHECKOUT_APPROVED` | `true`, `false`; live mode requires both an explicit configuration change and completed release gates |
@@ -166,6 +167,21 @@ An order admitted before 08:15 may finish within its bounded checkout deadline.
 No new order is admitted after the cutoff. The app never fills bank fields or
 claims that delivering a gateway link means payment succeeded. Cross-device
 payment-link usability remains unverified.
+
+### Mobile Telegram and separate network paths
+
+You can answer the bot from Telegram on your phone; Telegram Desktop on the
+workstation is not required. The Linux bot process itself still needs Telegram
+API access. Keep its local proxy service available through `TELEGRAM_PROXY_URL`.
+The store browser defaults to a direct connection using Chrome's
+`--no-proxy-server`, independently of the desktop proxy setting. Set
+`BROWSER_DIRECT_CONNECTION=false` only to restore normal system-proxy behavior.
+
+Disabling a desktop's global proxy setting can leave the local proxy service
+running; stopping that service breaks the bot's Telegram connection. A full
+VPN/TUN operates below the browser proxy setting and may need its own split
+routing or to be disabled while the local Telegram proxy service stays available.
+These settings do not change OS routing or solve site challenges.
 
 ## CLI compatibility and order recovery
 

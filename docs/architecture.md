@@ -90,6 +90,11 @@ or Tehran schedule. Its behavior must not be inferred from Telegram settings.
 schedule, dry-run gates, deadlines and an optional HTTP(S) Telegram proxy. Empty
 `BROWSER_CHANNEL` selects Playwright Chromium; `chrome` selects installed Chrome.
 The proxy is passed to both Telegram HTTP clients, not to the store browser.
+`BROWSER_DIRECT_CONNECTION=true` adds `--no-proxy-server` to the store browser,
+so it does not inherit desktop HTTP/SOCKS proxy settings. False preserves normal
+system-proxy behavior. This changes neither process-wide proxy variables nor
+OS VPN/TUN routes; Telegram's explicit proxy remains independent. Mobile and
+desktop Telegram clients are not part of the Linux bot's transport lifecycle.
 
 The confirmed application default is quantity 2. Historical four-tire plans and
 explicit four-tire test fixtures do not override that default or the store's

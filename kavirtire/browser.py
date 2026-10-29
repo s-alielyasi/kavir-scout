@@ -84,6 +84,7 @@ async def persistent_browser(config: Config) -> AsyncIterator[tuple[BrowserConte
         context = await playwright.chromium.launch_persistent_context(
             user_data_dir=str(config.user_data_dir), headless=config.headless,
             channel=config.browser_channel,
+            args=['--no-proxy-server'] if config.browser_direct_connection else [],
             viewport={'width': 1360, 'height': 900})
         context.set_default_timeout(config.timeout_ms)
         context.set_default_navigation_timeout(config.timeout_ms * 2)

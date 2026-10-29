@@ -320,3 +320,30 @@ No accepted national-ID reply arrived within the configured 180-second input TTL
 The worker then ended at `WAITING_FOR_NATIONAL_ID` with a sanitized timeout and
 cleaned up the request. No browser, SMS, inventory request or order was started.
 The bot remained available for an owner-initiated `/test_inventory` retry.
+
+## Independent store and Telegram network paths — 2026-10-29
+
+A subsequent owner-initiated inventory test reached `CHECKING_SESSION`, paused
+on detected site protection/access restrictions and expired waiting for manual
+input. No order was attempted. The owner reported that the store did not open
+with the desktop VPN/proxy enabled and asked to supply inputs from mobile Telegram.
+
+Added validated `BROWSER_DIRECT_CONNECTION=true` for the retailer browser. It
+launches Chrome/Chromium with `--no-proxy-server`; false preserves normal system
+proxy behavior. Both Telegram HTTP clients keep their explicit configured proxy.
+No OS proxy/VPN setting or process-global proxy variable was changed, and private
+`.env` was not edited. A full VPN/TUN route is outside this browser-level control.
+
+Public network checks on this device succeeded: direct public store HTTPS 200;
+then headed Chrome using the real `persistent_browser` path returned 200 and
+showed the ordinary terms checkbox, while Telegram `getMe` authenticated through
+the existing local proxy in the same run. The browser used a temporary profile;
+no login, SMS, inventory or order action was made by this probe.
+
+**18 focused core/settings/application tests and 3 browser regressions passed**,
+including both direct/system browser modes, unchanged proxy environment, session
+persistence and the after-hours login-to-inventory fixture. There are now 104
+permanent tests; the prior full 103-test result is separate and the full suite was
+not rerun for this routing change. Config and whitespace checks passed. Mobile
+message entry uses the same authorized account/chat; Telegram Desktop need not
+run, but the Linux bot's local Telegram proxy service must stay reachable.

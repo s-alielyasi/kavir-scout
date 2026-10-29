@@ -14,6 +14,8 @@ class CoreTests(unittest.TestCase):
         self.assertEqual((c.poll_interval, c.target_quantity), (5, 2))
         self.assertFalse(c.headless)
         self.assertIsNone(c.browser_channel)
+        self.assertTrue(c.browser_direct_connection)
+        self.assertFalse(Config.from_env({'BROWSER_DIRECT_CONNECTION': 'false'}).browser_direct_connection)
         self.assertEqual(Config.from_env({'BROWSER_CHANNEL': 'chrome'}).browser_channel, 'chrome')
         self.assertEqual(c.target_product, 'Perfect (R14) KB27')
         self.assertEqual(c.target_size, '185/65R14')
@@ -24,6 +26,7 @@ class CoreTests(unittest.TestCase):
                        {'POLL_INTERVAL': 'inf'}, {'TARGET_QUANTITY': '0'},
                        {'TARGET_QUANTITY': 'four'}, {'HEADLESS': 'maybe'},
                        {'BROWSER_CHANNEL': 'unknown'},
+                       {'BROWSER_DIRECT_CONNECTION': 'maybe'},
                        {'TARGET_SIZE': ''},
                        {'MAX_RETRIES': '0'}, {'GATEWAY_HOSTS': '*'}):
             with self.subTest(values=values), self.assertRaises(ValueError):

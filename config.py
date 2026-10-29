@@ -29,6 +29,7 @@ class Config:
     root: Path = ROOT
     store_url: str = STORE_URL
     browser_channel: str | None = None
+    browser_direct_connection: bool = True
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> 'Config':
@@ -61,7 +62,8 @@ class Config:
         if not profile.is_absolute():
             profile = ROOT / profile
         return cls(interval, product, size, quantity, headless == 'true',
-                   profile.resolve(), retries, timeout, hosts, browser_channel=channel or None)
+                   profile.resolve(), retries, timeout, hosts, browser_channel=channel or None,
+                   browser_direct_connection=boolean(e, 'BROWSER_DIRECT_CONNECTION', 'true'))
 
 
 def load_config() -> Config:
