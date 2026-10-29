@@ -1,5 +1,11 @@
 # KavirScout Telegram Integration Plan
 
+**Implementation update — 2026-10-29:** local implementation is now available on
+`feature/telegram-app`. See [implementation status](telegram-implementation-status.md)
+and [operations](telegram-operations.md) for actual behavior, tests and remaining
+live release gates. The planning-only restrictions below describe the original
+documentation task; they do not describe the subsequent implementation session.
+
 **Status:** design and implementation handoff only; nothing in this document is implemented by this task.
 **Analysis date:** 2026-10-27. **Inspected baseline:** `3e078d361de703a97bc9ba12a576f6b952d679c4`, branch `main`.
 **Future runtime:** Python 3.11+, async Playwright, one private Telegram user/chat, one active device.
@@ -771,30 +777,30 @@ The following need validation or owner decisions **in the future session**, not 
 
 ## 35. Implementation Checklist
 
-Every unchecked item is future work; this document does not mark implementation complete.
+Updated 2026-10-29: checked items denote local implementation with fixture evidence; unchecked items remain device/live release gates. See the implementation status and verification record. No production approval is implied.
 
 - [ ] Confirm baseline and the no-purchase state of the previous deployment.
-- [ ] Select compatible PTB and timezone-data dependencies on the future device.
-- [ ] Add validated schedule/Telegram/DRY_RUN config; remove raw identity from shared Config.
-- [ ] Implement universal exact user/chat/private-chat authorization.
-- [ ] Implement explicit state model, immutable status and one-owner controller.
-- [ ] Implement daily `/arm` admission; startup and `/start` stay inert.
-- [ ] Implement broker request IDs/generations, TTL, reply correlation and no persistence.
-- [ ] Integrate existing positive-DOM/account session check and transient national-ID submission.
-- [ ] Integrate case-sensitive OTP, one-shot UI submit, rejection/expiry and enabled resend.
-- [ ] Remove raw credentials from redaction lists/Futures/service state after use.
-- [ ] Implement best-effort deletion and sanitized deletion failure handling.
-- [ ] Implement ZoneInfo clock, exact three windows, cutoff and once-per-run reminder.
-- [ ] Integrate serial refresh/check with actual completion and no cooldown workaround.
-- [ ] Implement stop-monitor/order claim and nonsecret durable attempt guard.
-- [ ] Enforce DRY_RUN before every selection/cart/order mutation.
-- [ ] Reuse quantity/cart validation; retain action-phase/uncertainty protections.
-- [ ] Integrate URL-only gateway observer and private result sink with no stdout URL.
-- [ ] Deliver payment URL button only to authorized chat; retries cannot create orders.
-- [ ] Implement safe `/cancel`, checkpointed `/resume` and bounded cleanup.
+- [x] Select compatible PTB and timezone-data dependencies on the future device.
+- [x] Add validated schedule/Telegram/DRY_RUN config; remove raw identity from shared Config.
+- [x] Implement universal exact user/chat/private-chat authorization.
+- [x] Implement explicit state model, immutable status and one-owner controller.
+- [x] Implement daily `/arm` admission; startup and `/start` stay inert.
+- [x] Implement broker request IDs/generations, TTL, reply correlation and no persistence.
+- [x] Integrate existing positive-DOM/account session check and transient national-ID submission.
+- [x] Integrate case-sensitive OTP, one-shot UI submit, rejection/expiry and enabled resend.
+- [x] Remove raw credentials from redaction lists/Futures/service state after use.
+- [x] Implement best-effort deletion and sanitized deletion failure handling.
+- [x] Implement ZoneInfo clock, exact three windows, cutoff and once-per-run reminder.
+- [x] Integrate serial refresh/check with actual completion and no cooldown workaround.
+- [x] Implement stop-monitor/order claim and nonsecret durable attempt guard.
+- [x] Enforce DRY_RUN before every selection/cart/order mutation.
+- [x] Reuse quantity/cart validation; retain action-phase/uncertainty protections.
+- [x] Integrate URL-only gateway observer and private result sink with no stdout URL.
+- [x] Deliver payment URL button only to authorized chat; retries cannot create orders.
+- [x] Implement safe `/cancel`, checkpointed `/resume` and bounded cleanup.
 - [ ] Audit browser storage/debug/logs for identity, OTP, cookies, token and URL leaks.
-- [ ] Add future `*.session` ignore; verify all private data stays out of Git.
-- [ ] Pass all current regressions plus proposed authorization/schedule/state/concurrency/security tests.
+- [x] Add future `*.session` ignore; verify all private data stays out of Git.
+- [x] Pass all current regressions plus proposed authorization/schedule/state/concurrency/security tests.
 - [ ] Complete staged device validation and a real observation-only dry run.
 - [ ] Resolve quantity-four/site-policy and cross-device-payment gates before any live order.
 - [ ] Record owner authorization and rollout evidence; only then permit explicit production mode.

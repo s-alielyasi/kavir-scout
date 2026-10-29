@@ -111,3 +111,73 @@ restart monitoring or attempt a purchase without a fresh user request.
 The final storage-state export was unavailable during Ctrl+C; the earlier
 successful login snapshot and persistent profile remain, with server validity
 not guaranteed on a future run.
+
+## Telegram implementation verification — 2026-10-29
+
+This is new local evidence, separate from the Windows/live runs above. The user
+authorized proceeding with the Telegram implementation plan. Work is on
+`feature/telegram-app`; no live bot, SMS, monitoring, order or payment was started.
+
+Environment: Linux; portable access to existing CPython 3.12.3 through its snap
+loader, Playwright 1.64.1, local Google Chrome 156.0.8078.47. SDK/version constraints
+are committed in `requirements-tested.txt`, including PTB 22.8, tzdata 2026.6 and
+pyee 13.0.1. Pyee 13 was selected to retain the Python 3.11 compatibility range;
+the initially installed pyee 14 requires Python 3.12. System Python was not changed.
+
+The complete **91-test suite passed in 121.661 seconds**. A subsequent shutdown
+admission review added one regression preventing queued `/arm` during shutdown;
+the **20 affected orchestration/application/state tests passed in 2.099 seconds**
+after that fix. The delivered checkout contains **92 permanent tests**; it is not
+claimed that all 92 ran in one final invocation. The original 41 regressions remain,
+with only credential, interaction-port and profile-backup interface adaptations.
+
+The temporary environment adapter substituted installed Chrome for Playwright's
+bundled Chromium and installed a default page-request abort route; test-local
+fixture routes took priority. This is not a native Windows/bundled-Chromium test.
+All regression tests are committed under `tests/` and can run normally after
+installing the documented dependencies and Playwright Chromium; they do not depend
+on the temporary adapter or `/tmp` files for their source or fixtures.
+
+Verified cases include:
+
+- exact Tehran boundaries, timezone conversion, late results, midnight, clock
+  rollback, slow cycles across window changes and a once-per-run login reminder;
+- idle boot, duplicate/concurrent arm, unauthorized user/chat/update rejection,
+  update replay rejection, cancellation during input/cleanup, bounded order and
+  handoff lifetimes, queued-command rejection during shutdown and SDK cleanup
+  even when controller cleanup fails;
+- input reply correlation, stale/manual checkpoint refusal, numeric glyphs,
+  case-sensitive OTP, format rejection without echo, deletion failure, prompt-send
+  failure and broker cleanup on timeout/cancellation;
+- real-browser fixtures for a Telegram national-ID/OTP conversation through dry
+  run with zero selection, and through a single allowed synthetic order/pop-up
+  gateway with fixed private recipient, no payment-field filling and no URL file;
+- repeat-submit prevention with decorated/alias buttons, exact selected-button
+  preflight, mixed-selector ambiguity, extra/cart-summary item rejection, strict
+  quantity parsing, stock completion beyond metadata-only changes and disabled
+  refresh cooldown instead of reload;
+- existing-account confirmation, profile-bound cookie recovery without origin
+  storage export, OTP reference removal before manual pauses, rejection/resend
+  checkpoint without replay, same-tab gateway with no bank DOM queries, and
+  refusal of preexisting gateway tabs;
+- durable nonsecret order barriers across restart, corrupt-marker refusal,
+  explicit matching-run resolution, and CLI refusal to bypass a bot order barrier.
+
+Runtime module imports, both `--help` entry points, both config validators with
+synthetic bot settings, Python 3.11 grammar parsing, local Markdown links and Git
+whitespace checks passed. No identity is present in settings serialization and
+example files contain no populated sensitive keys. Existing private `.env` and
+profiles were not overwritten. The user's preexisting example-quantity edit was
+kept outside implementation commits.
+
+Remaining release gates: actual Python 3.11 and Windows execution; native bundled
+Chromium; actual bot transport/device setup; authenticated live selectors and
+limits; browser-written identity/OTP/cache/autofill audit on the real device;
+verified live cancellation/recovery and phone payment-link usability. No online
+CVE/OSV audit is claimed. Profile persistence is not proof of RAM-only personal
+data. Four tires remain disallowed whenever the actual site cap is lower.
+
+The bot defaults to `DRY_RUN=true`, `LIVE_CHECKOUT_APPROVED=false`, no auth/profile
+artifacts and no separate session export. The CLI now asks for identity at runtime
+and uses the same durable order barrier. See `telegram-operations.md` and
+`telegram-implementation-status.md` before the separately authorized live stages.
