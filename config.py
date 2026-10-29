@@ -65,3 +65,70 @@ def load_config() -> Config:
     from dotenv import load_dotenv
     load_dotenv(ROOT / '.env', override=False)
     return Config.from_env()
+
+
+def boolean(e: Mapping[str, str], key: str, default: str) -> bool:
+    value = e.get(key, default).strip().lower()
+    if value not in ('true', 'false'):
+        raise ValueError(f'{key} must be true or false.')
+    return value == 'true'
+
+
+@dataclass(frozen=True)
+class BotSettings:
+    token: str = field(repr=False)
+    allowed_user_id: int
+    allowed_chat_id: int
+    retailer: Config
+    dry_run: bool
+    schedule: object
+    delete_sensitive_messages: bool = True
+    otp_timeout: int = 180
+    checkout_timeout: int = 180
+    handoff_ttl: int = 180
+    live_checkout_approved: bool = False
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> 'BotSettings':
+        from datetime import time
+        from dataclasses import replace
+        from kavirtire.orchestration.scheduling import Schedule, TEHRAN
+        e = os.environ if env is None else env
+        token = e.get('TELEGRAM_BOT_TOKEN', '').strip()
+        if not re.fullmatch(r'[0-9]+:[A-Za-z0-9_-]{20,}', token):
+            raise ValueError('A Telegram bot token is required.')
+        ids = []
+        for key in ('TELEGRAM_ALLOWED_USER_ID', 'TELEGRAM_ALLOWED_CHAT_ID'):
+            value = e.get(key, '')
+            if not re.fullmatch(r'[1-9][0-9]*', value):
+                raise ValueError(f'{key} must be a positive numeric private-chat ID.')
+            ids.append(int(value))
+        if e.get('SALE_TIMEZONE', 'Asia/Tehran') != TEHRAN.key:
+            raise ValueError('SALE_TIMEZONE must be Asia/Tehran.')
+        schedule = Schedule(
+            start=time.fromisoformat(e.get('SALE_START_TIME', '08:00:00')),
+            ends=tuple(time.fromisoformat(e.get(f'POLL_WINDOW_{i}_END', default))
+                       for i, default in enumerate(('08:05:00', '08:10:00', '08:15:00'), 1)),
+            intervals=tuple(int(e.get(f'POLL_WINDOW_{i}_INTERVAL', str(default)))
+                            for i, default in enumerate((5, 15, 30), 1)),
+            reminder=time.fromisoformat(e.get('LOGIN_REMINDER_TIME', '07:55:00')))
+        durations = tuple(int(e.get(key, '180')) for key in (
+            'OTP_INPUT_TIMEOUT_SECONDS', 'CHECKOUT_TIMEOUT_SECONDS', 'PAYMENT_HANDOFF_TTL_SECONDS'))
+        if any(d <= 0 for d in durations):
+            raise ValueError('Input, checkout and handoff timeouts must be positive.')
+        dry_run = boolean(e, 'DRY_RUN', 'true')
+        approved = boolean(e, 'LIVE_CHECKOUT_APPROVED', 'false')
+        if not dry_run and not approved:
+            raise ValueError('Live checkout requires completion of the documented release gates.')
+        if boolean(e, 'DEBUG_ARTIFACTS_ENABLED', 'false'):
+            raise ValueError('Bot authentication/profile artifacts must remain disabled.')
+        # The bot never consumes a legacy national-ID environment setting.
+        retailer = Config.from_env({k: v for k, v in e.items() if k != 'NATIONAL_ID'})
+        return cls(token, *ids, retailer, dry_run, schedule,
+                   boolean(e, 'DELETE_SENSITIVE_MESSAGES', 'true'), *durations, approved)
+
+
+def load_bot_settings() -> BotSettings:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / '.env', override=False)
+    return BotSettings.from_env()

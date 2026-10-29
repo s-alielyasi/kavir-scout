@@ -8,3 +8,4 @@ __pycache__/
 .venv/
 .tools/
 .pytest_cache/
+*.session
