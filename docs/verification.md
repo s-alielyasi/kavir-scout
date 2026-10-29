@@ -1,6 +1,12 @@
-# Verification record — 2026-10-27
+# Verification record
 
-Environment: Windows, local portable CPython 3.12.10; Playwright 1.64.1 and its
+Chronological record: environment descriptions, defaults and results belong to
+the dated section where they appear. Current setup/status is in the
+[documentation index](README.md), [architecture](architecture.md) and
+[implementation status](telegram-implementation-status.md). Later owner decisions
+supersede historical configuration descriptions; today's default quantity is 2.
+
+Initial environment (2026-10-27): Windows, local portable CPython 3.12.10; Playwright 1.64.1 and its
 Chromium installed under ignored `.tools/`. Product supports Python 3.11+ and
 does not depend on the portable installation. Only playwright and python-dotenv
 are declared runtime dependencies. Standard-library unittest is the test runner.
@@ -58,7 +64,7 @@ premature refresh completion. These were addressed before delivery.
 
 Authenticated live selectors, stock, SMS behavior, order creation, actual gateway
 provider and live quantity rules beyond public terms remain unverified. See the
-README section `Selectors that may need adjustment`. A passing fixture suite
+[selector provenance](architecture.md#selector-provenance). A passing fixture suite
 does not imply a successful real purchase. No actual payment URL was obtained.
 Site/server session expiration cannot be prevented by persistent browser state.
 
@@ -181,3 +187,103 @@ The bot defaults to `DRY_RUN=true`, `LIVE_CHECKOUT_APPROVED=false`, no auth/prof
 artifacts and no separate session export. The CLI now asks for identity at runtime
 and uses the same durable order barrier. See `telegram-operations.md` and
 `telegram-implementation-status.md` before the separately authorized live stages.
+
+## Linux execution preparation — 2026-10-29
+
+At the owner's request, created the previously absent private `.env` with mode
+0600, the confirmed product/size, quantity 2 matching the existing local example,
+dry run enabled and all three Telegram credential/ID fields empty. Verified Git
+ignores `.env`, `.tools` and `.venv`; the existing example edit was preserved.
+
+Installed standalone CPython 3.12.16 under the project's ignored `.tools` and
+the constrained dependencies in `.venv`; system Python 3.8 was not changed.
+`pip check` passed. Playwright's Chromium installer rejected Ubuntu 20.04 as
+unsupported. Added validated optional `BROWSER_CHANNEL=chrome` and selected the
+already installed Google Chrome 156.0.8078.47 in the private config instead.
+
+The real `persistent_browser` path successfully opened and closed **headed**
+Chrome with a temporary profile and local HTML; no merchant page or Telegram
+connection was opened. This does not validate live login or profile storage.
+The Linux launcher passed Bash syntax checks and `--check-config` from `/tmp`
+using synthetic Telegram values supplied only to the subprocess; the private
+credential fields stayed empty. Final core, scheduling and orchestration run:
+**26 tests passed**. Compile checks and `git diff --check` passed. The full browser
+suite was not rerun in this preparation step; previous suite evidence above is
+separate. Real bot transport, authentication, dry-run observation and live-order
+release gates remain pending.
+
+## First real Telegram startup — 2026-10-29
+
+The owner populated the three private Telegram values locally. Config validation
+passed without displaying them. Direct HTTPS to Telegram failed with a network
+unreachable error while public PyPI remained accessible. The existing Linux
+desktop HTTP proxy successfully reached Telegram. Added optional validated
+`TELEGRAM_PROXY_URL` for both PTB API and getUpdates clients, without changing
+system settings or the merchant browser's proxy configuration. Proxy values are
+excluded from settings repr; malformed URLs are rejected without echo.
+
+**8 scheduling/config and application tests passed**, including construction of
+both Telegram HTTP clients with the explicit proxy. The real app then completed
+Telegram initialization and polling startup and logged readiness in idle mode.
+`DRY_RUN=true` and `LIVE_CHECKOUT_APPROVED=false` remain set. No proactive message,
+merchant login, SMS, stock observation or order was initiated by the agent.
+Owner command-response testing and all live merchant release gates remain pending.
+
+## Copyable Telegram output — 2026-10-29
+
+The owner confirmed real bot responses, then reported that message content could
+not be copied. General notifications previously set `protect_content=True`
+unconditionally. General command responses and events now use unprotected
+messages, including `/start`, `/status` and manual checkpoint instructions.
+National-ID/OTP prompts and payment-link messages explicitly retain protection.
+Existing Telegram messages are not edited; the owner should request fresh output.
+
+**13 Telegram handler and application tests passed**, including copyable start,
+status and event messages, protected login prompts, and the protected fixed-chat
+payment button. Config validation, compile checks and Git whitespace checks
+passed. No merchant login, SMS or order was initiated for this change.
+
+## Workspace and documentation consolidation — 2026-10-29
+
+Reviewed the single local worktree on `feature/telegram-app`, accumulated source
+changes, entry points, dependency constraints, tests and documentation. The owner
+confirmed the real `/start` and `/status` responses and accepted the current
+checkpoint. That confirms command transport and copyable output, not store login
+or inventory/checkout behavior.
+
+Aligned code and both configuration examples with the owner's confirmed target
+quantity **2**. Explicit four-tire fixtures remain unchanged as regression data.
+Extracted shared browser fixtures into `tests/browser_support.py`, removed the
+safety suite's dependency on importing a test module, blocked unmatched fixture
+page requests and added `TEST_BROWSER_CHANNEL=chrome` selection. The suite now
+runs from the checkout without an external monkeypatch runner.
+
+Rewrote the project README in English with Linux/Telegram setup and the separate
+CLI behavior. Added a documentation index and current architecture/selector map,
+updated operations/status and marked original plans as historical. Selector
+evidence from 2026-10-27 was preserved rather than presented as a new inspection.
+
+Final complete suite:
+
+```bash
+TEST_BROWSER_CHANNEL=chrome .venv/bin/python -m unittest discover -v
+```
+
+**95 tests passed in 124.983 seconds** on CPython 3.12.16, Playwright 1.64.1 and
+installed Google Chrome 156.0.8078.47. This run used only permanent tests and
+helpers in the checkout, temporary browser profiles and synthetic input. No live
+Telegram message, SMS, merchant observation or order was initiated by these tests.
+
+Additional checks passed: Python 3.11 grammar parsing for 42 Python files,
+28 runtime-module imports, compileall, dependency consistency, both config
+validators, Bash syntax, local Markdown paths, LF line endings and Git whitespace.
+The English README and quantity-two examples/defaults were checked explicitly.
+Private `.env` contents and the order marker were unchanged compared with the
+start of this cleanup. The configured token/owner IDs and private runtime paths
+were absent from the source prepared for commit. Ignored installation/profile
+data was preserved.
+
+Remaining gates are unchanged: real Telegram-driven store login/OTP, scheduled
+observation/cancellation, current store terms, authenticated checkout selectors,
+browser storage privacy and usable payment handoff. Windows, native Python 3.11,
+bundled Chromium on this host and an online CVE audit were not validated here.

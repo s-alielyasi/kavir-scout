@@ -1,5 +1,10 @@
 # Kavir Scout implementation plan
 
+Historical plan for the initial CLI implementation on 2026-10-27. For the current
+Telegram application, confirmed two-tire default and English README, use the
+[documentation index](README.md) and [architecture](architecture.md). Completed
+items below describe that original delivery, not current live release approval.
+
 Spec: the user's 30-section request, 2026-10-27.
 
 Architecture: async Playwright, one persistent Chromium context, explicit workflow

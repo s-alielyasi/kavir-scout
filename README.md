@@ -1,221 +1,218 @@
-# Kavir Scout — دستیار مرورگری خرید کویرتایر
+# Kavir Scout
 
-اپ تلگرام نیز پیاده شده است: [راهنمای اجرا و بازیابی](docs/telegram-operations.md)
-و [وضعیت اجرای پلن](docs/telegram-implementation-status.md). ورودی آن
-`python -m telegram_bot` است و با حالت مشاهدهٔ بدون سفارش آغاز می‌شود.
-ورودی CLI قدیمی همچنان `python main.py` است و جریان خرید خودش را اجرا می‌کند.
+A private Telegram controller and browser assistant for Kavir Tire. It uses
+async Playwright and the store's visible interface for login, inventory checks
+and a guarded checkout workflow. Payment remains manual. The Telegram interface
+is in Persian; this README describes setup and development in English.
 
-Python 3.11+، Playwright Async و Chromium واقعی. مرورگر پیش‌فرض نمایان است.
-نشست در پروفایل مستقل حفظ می‌شود. برنامه فقط از رابط سایت استفاده می‌کند؛
-هیچ درخواست مخفی خرید، `requests`، خواندن پیامک یا پرداخت بانکی ندارد.
+The confirmed target is **Perfect (R14) KB27**, **185/65R14**, **2 tires**.
+The store's current purchase limits always take precedence.
 
-**یافته مهم از سایت واقعی در ۲۷ اکتبر ۲۰۲۶:** صفحه
-[شرایط فروش کویرتایر](https://kavirtire.ir/esale) هنگام بررسی با Chromium اعلام کرد
-برای هر کد ملی و پلاک، خرید **۲ حلقه در ۶ ماه** مجاز است. مقدار درخواستی پیش‌فرض
-`TARGET_QUANTITY=4` حفظ شده، ولی برنامه با مشاهده این سقف، پیش از ورود/سفارش
-متوقف می‌شود و در `debug/` شواهد ذخیره می‌کند. انتخاب مقدار دیگر فقط زمانی
-درست است که با نیاز شما و شرایط فعلی سایت سازگار باشد؛ برنامه محدودیت را دور نمی‌زند.
-وضعیت موجودی محصول هدف و امکان خرید ۴ حلقه تأیید نشده‌اند.
+## Current status
 
-## نصب و اجرا در Windows / PowerShell
+The Telegram app runs on the prepared Linux workstation. The owner has confirmed
+`/start`, `/status` and copyable responses. Real Telegram login/OTP integration
+with the store, scheduled inventory observation, live checkout and usable payment
+handoff still need supervised validation. Earlier CLI live-site observations are
+historical evidence, not validation of the current Telegram workflow.
 
-در مسیر پروژه این دستورها را اجرا کنید؛ Python نصب‌شده باید 3.11 یا جدیدتر باشد:
+The bot defaults to `DRY_RUN=true` and `LIVE_CHECKOUT_APPROVED=false`. A dry run
+can authenticate and observe inventory, but cannot select a product, change its
+quantity, add it to the cart or create an order. Starting or restarting the bot
+does not arm a run.
 
-```powershell
-cd C:\Users\Vibe\Documents\kavir-scout
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m playwright install chromium
-Copy-Item .env.example .env
-notepad .env
-.\.venv\Scripts\python.exe main.py --check-config
-.\.venv\Scripts\python.exe main.py
-```
+## Run on the prepared Linux workstation
 
-ساخت `.env` را فقط بار اول انجام دهید تا تنظیمات خودتان بازنویسی نشوند.
-کد ملی در زمان اجرای برنامه درخواست می‌شود و دیگر تنظیم ENV نیست.
-برای اجرای بعدی فقط آخرین دستور کافی است. اگر `python` پیدا نشد، ابتدا Python
-را نصب و گزینه Add Python to PATH را فعال کنید. با `python --version` بررسی کنید.
-برای محیطی که venv فعال شده یا Python مستقیم استفاده می‌شود:
+From the repository root:
 
 ```bash
-pip install -r requirements.txt
-playwright install chromium
-cp .env.example .env
-python main.py
+./run-telegram.sh --check-config
+./run-telegram.sh
 ```
 
-در Linux/macOS بهتر است از `python3 -m venv .venv` و سپس
-`source .venv/bin/activate` استفاده کنید. در Linux ممکن است نصب پیش‌نیازهای
-سیستمی مرورگر با `python -m playwright install --with-deps chromium` لازم باشد.
+The launcher uses this checkout's `.venv`, works from any working directory and
+does not install dependencies or create a system service. Keep its terminal
+open and the machine awake. Use the graphical desktop session so manual browser
+steps are accessible. If another instance is already running, use that instance
+or stop it gracefully before starting a replacement.
 
-در این محیط توسعه، Python پرتابل و Chromium فقط برای بررسی در `.tools/`
-قرار گرفته‌اند و Git آن‌ها را نادیده می‌گیرد؛ وابستگی محصول به این مسیر نیست.
-اگر Python سیستمی این رایانه هنوز نصب نیست، اجرای محلی جایگزین:
+Private settings live in `.env`. The prepared workstation uses installed Google
+Chrome and a Telegram-only HTTP proxy; keep the existing proxy application
+running. Tokens, numeric owner IDs and browser profiles must remain local.
 
-```powershell
-$env:PLAYWRIGHT_BROWSERS_PATH = "$PWD/.tools/browsers"
-.\.tools\python\python.exe main.py
+## Set up a new checkout
+
+Use **Python 3.11 or newer**. If `python3` is older, substitute a newer interpreter
+in the environment-creation command. Then install the recorded dependencies:
+
+```bash
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt -c requirements-tested.txt
 ```
 
-## تنظیمات
+Choose the browser:
 
-```dotenv
-POLL_INTERVAL=5
-TARGET_PRODUCT="Perfect (R14) KB27"
-TARGET_SIZE=185/65R14
-TARGET_QUANTITY=4
-HEADLESS=false
-USER_DATA_DIR=./data/browser_profile
-MAX_RETRIES=3
-TIMEOUT_MS=15000
-GATEWAY_HOSTS=shaparak.ir
+- With Google Chrome already installed, set `BROWSER_CHANNEL=chrome` in `.env`.
+  No bundled Chromium download is needed.
+- For Playwright's bundled Chromium on a supported OS, leave `BROWSER_CHANNEL`
+  empty and run `./.venv/bin/python -m playwright install chromium`. System
+  browser dependencies may also be needed. The pinned Playwright Chromium
+  installer does not support the current Ubuntu 20.04 workstation; use Chrome
+  there.
+
+Create the private configuration **only if it does not already exist**:
+
+```bash
+cp -n .env.telegram.example .env
+chmod 600 .env
 ```
 
-متغیرهای محیطی سیستم بر `.env` اولویت دارند. مسیر نسبی پروفایل نسبت به ریشه پروژه
-است، نه پوشه‌ای که ترمینال از آن اجرا شده است. فاصله پایش باید مثبت و متناهی،
-تعداد و retry مثبت، و timeout حداقل ۱۰۰۰ میلی‌ثانیه باشد. تنظیم قدیمی
-`NATIONAL_ID` برای ورود استفاده نمی‌شود؛ ورودی زمان اجرا جایگزین آن است.
+For an existing `.env`, merge missing settings manually without replacing its
+contents. Fill in `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID` and
+`TELEGRAM_ALLOWED_CHAT_ID` locally, then run the config check and launcher above.
+Both IDs identify the allowed owner in their private chat; usernames are not IDs.
+Send `/start` to your own bot in Telegram after startup.
 
-`GATEWAY_HOSTS` فهرست جداشده با کامای دامنه‌های معتبر درگاه است؛ پیش‌فرض فقط
-`shaparak.ir` و زیردامنه‌هایش را روی HTTPS می‌پذیرد. دامنه ناشناخته، صرفاً با
-خارج‌شدن از دامنه کویرتایر، درگاه فرض نمی‌شود. در این حالت اقدام دستی لازم است؛
-دامنه را تنها پس از بررسی واقعی اعتبار آن اضافه کنید. این فهرست تضمین بانکی یا
-تأیید سازگاری با درگاه فعلی کویرتایر نیست.
+On Windows, create the environment with a Python 3.11+ interpreter and use
+`.\.venv\Scripts\python.exe` instead of `./.venv/bin/python`. Run the app with
+`python -m telegram_bot` using that interpreter; the Bash launcher is for Linux.
+See the [operations guide](docs/telegram-operations.md) for setup and recovery.
 
-## روند کار
+## Daily Telegram workflow
 
-1. قفل اختصاصی پروژه و پروفایل گرفته می‌شود تا دو نمونه همزمان اجرا نشوند.
-2. Chromium با `launch_persistent_context` باز می‌شود؛ کوکی و LocalStorage
-   در پروفایل می‌مانند. CLI فقط پشتیبان کوکی فروشگاه را در
-   `USER_DATA_DIR/.kavir-session.json` نگه می‌دارد؛ اپ تلگرام این خروجی را غیرفعال می‌کند.
-3. ورود با شواهد مثبت DOM تشخیص داده می‌شود؛ نبود فرم یا URL به‌تنهایی کافی نیست.
-4. در اجرای اول، قوانین معمولی پذیرفته و کد ملی در زمان اجرا دریافت می‌شود. OTP در CLI با
-   `input()` در ترمینال از خود شما گرفته می‌شود؛ نه فایل، نه log و نه خواندن SMS.
-   کدهای ۴ تا ۸رقمی، رمز ۸کاراکتری شامل حروف/عدد با حفظ بزرگی حروف و فیلدهای جداگانه پشتیبانی می‌شوند. در صورت تغییر فرم، تکمیل
-   دستی درخواست می‌شود. ارسال پیامک و کلیک‌های سفارش retry خودکار ندارند.
-5. بعد از ورود موفق و شواهد پروفایل، دکمه خرید باز می‌شود. نام کامل و سایز باید
-   داخل **یک ردیف/کارت یکتا** باشند. موارد مبهم انتخاب نمی‌شوند.
-6. موجودی به‌صورت ترتیبی پایش می‌شود؛ بین بررسی‌ها `POLL_INTERVAL` فاصله است.
-   زمان بارگذاری نیز به این فاصله اضافه می‌شود. refresh موازی یا tab پایش دوم نداریم.
-   اولویت دکمه موجودی است؛ تغییر ناحیه محصول و پایان loading بررسی می‌شود.
-   نبودن دکمه یا تأییدنشدن تغییر باعث fallback به reload می‌شود؛ برای دکمهٔ
-   موقتاً غیرفعال منتظر پایان cooldown می‌ماند و در صورت ادامهٔ ابهام اقدام دستی می‌خواهد.
-   locatorها دوباره ساخته می‌شوند و ElementHandle قدیمی استفاده نمی‌شود.
-7. انقضای نشست هنگام پایش، ورود مجدد و OTP را فعال می‌کند؛ سپس پایش ادامه می‌یابد.
-   پس از ورود به فرایند سفارش، پایش دیگر راه نمی‌افتد. انقضای نشست در checkout
-   برای جلوگیری از سفارش تکراری به بررسی دستی سپرده می‌شود.
-8. انتخاب محصول، تعیین تعداد با select/input/+− و خواندن مجدد مقدار انجام می‌شود.
-   محدودیت `max`، گزینه غیرفعال یا عدم پذیرش تعداد باعث توقف همراه debug می‌شود.
-9. پیش از هر کلیک ادامه/ثبت/پرداخت، نام، سایز و تعداد از همان ردیف سفارش دوباره
-   خوانده می‌شود. نبودن/مغایرت هر مقدار باعث `SAFETY CHECK FAILED` و توقف است.
-   آدرس، خودرو، روش ارسال یا اطلاعات پروفایل به‌صورت خودکار تغییر نمی‌کنند.
-   تصمیم انسانی یا فرم ناشناخته در ترمینال اعلام می‌شود.
-   کنترل «خرید» که احتمال ثبت مستقیم دارد، بدون امکان خواندن تعداد از UI کلیک
-   نمی‌شود؛ «انتخاب» معمولی، radio یا «افزودن به سبد خرید» می‌تواند به مرحله بعدِ تعیین تعداد برود.
-   بعد از پاسخ نامطمئن ثبت، ادامه خودکار غیرفعال می‌شود. عنوان‌های هم‌معنی ثبت
-   سفارش هم یک مرحله محسوب می‌شوند تا تغییر متن دکمه باعث سفارش دوم نشود.
-10. همان tab، tab تازه و popup برای URL درگاه بررسی می‌شوند. به محض تشخیص،
-    هیچ DOM یا فیلد بانکی خوانده/پر/کلیک نمی‌شود. URL فقط در ترمینال و
-    `payment_url.txt` قرار می‌گیرد؛ log فایل شامل token درگاه نیست. فقط آخرین URL
-    ذخیره می‌شود و در شروع اجرای جدید فایل قبلی پاک می‌شود.
-11. برنامه منتظر Enter می‌ماند و سپس مرورگر را می‌بندد. لینک درگاه ممکن است
-    به نشست، اطلاعات POST اولیه یا زمان انقضا وابسته باشد؛ tab بازشده را برای
-    پرداخت دستی نگه دارید. URL به‌تنهایی همیشه قابل بازپخش در مرورگر دیگر نیست.
+1. Start the app before 08:00 Tehran time.
+2. Send `/arm` in the allowed private chat, for example at 07:50.
+3. Reply to the current national-ID and OTP prompts. Complete any manual browser
+   challenge and confirm the account when asked. Existing sessions are checked,
+   not assumed to belong to the requested account.
+4. After authentication, the worker waits until 08:00 and begins scheduled
+   observation without another command.
 
-CAPTCHA، صف، 403/429 و کنترل‌های شناخته‌شده باعث مکث می‌شوند. آن‌ها را در
-مرورگر دستی طی کنید یا زمان لازم را منتظر بمانید، سپس Enter بزنید. هیچ spoofing،
-proxy rotation، تغییر IP، دورزدن محدودیت یا فراخوانی پنهان API وجود ندارد.
-تشخیص خودکار همه کنترل‌های آینده تضمین‌شدنی نیست؛ صفحه ناشناخته را دستی بررسی کنید.
+All schedule decisions use `Asia/Tehran` and the date of the armed run:
 
-با Ctrl+C، برنامه بدون traceback طولانی خارج می‌شود و تلاش می‌کند نشست را ذخیره
-و context را ببندد. بستن اجباری فرایند یا خود مرورگر ممکن است export را ناممکن کند.
-SessionStorage مطابق محدودیت مرورگر لزوماً میان اجراها حفظ نمی‌شود؛ کوکی و
-LocalStorage و IndexedDB هدف پروفایل پایدارند. Chromium ممکن است کوکی‌های بدون
-تاریخ انقضا را در بستن برنامه حذف کند؛ فقط کوکی‌های نشست گم‌شدهٔ دامنه کویرتایر
-از پشتیبان همان پروفایل بازگردانده می‌شوند. کوکی فعلی بازنویسی نمی‌شود؛ کوکی منقضی‌شده یا
-کوکی درگاه وارد نمی‌شود. خروجی جداگانه، LocalStorage/IndexedDB را کپی نمی‌کند.
-پشتیبان قدیمی `data/storage_state.json` دیگر به‌صورت خودکار وارد پروفایل نمی‌شود.
-نشست موجود نیازمند تطبیق دستی حساب است؛ در صورت مغایرت ادامه ندهید.
-اعتبار نشست همچنان تابع سرور است. جزئیات API در
-[مستندات BrowserContext](https://playwright.dev/python/docs/api/class-browsercontext).
+| Tehran time | Minimum spacing between inventory-check starts |
+|---|---:|
+| Before 08:00 | Login preparation and waiting; no periodic stock checks |
+| 08:00–08:05 | 5 seconds |
+| 08:05–08:10 | 15 seconds |
+| 08:10–08:15 | 30 seconds |
+| From 08:15 | No new check or order admission |
 
-## فایل‌ها
+Checks run sequentially. Site cooldowns and slow responses can extend the spacing;
+missed checks are not replayed in a burst. In dry-run mode, detecting available
+target stock ends the run without checkout. A restart always returns to idle;
+daily arming is never restored automatically. The configured schedule is not a
+claim about the store's current sale hours.
+
+| Command | Behavior |
+|---|---|
+| `/start` | Show help and the configured target; no browser or purchase starts. |
+| `/arm` | Arm one run for today's Tehran date; reject after the cutoff. |
+| `/status` | Show a nonsecret, copyable status snapshot. |
+| `/cancel` | Request cancellation and bounded cleanup. |
+| `/resume` | Resume only when replying to the current manual checkpoint; alternatively send `/resume CHECKPOINT_ID`. |
+
+General responses can be copied and forwarded. Login prompts and payment-link
+messages retain content protection. Incoming credentials are deleted on a
+best-effort basis; Telegram is not an end-to-end encrypted credential channel.
+
+## Configuration
+
+[.env.telegram.example](.env.telegram.example) lists all bot settings. Explicitly
+exported environment values override `.env`; relative profile paths are resolved
+against the repository root. National ID and OTP are runtime inputs, not settings.
+The obsolete `NATIONAL_ID` setting is ignored.
+
+| Setting | Default / purpose |
+|---|---|
+| `TARGET_PRODUCT`, `TARGET_SIZE`, `TARGET_QUANTITY` | Confirmed model, size and quantity 2 |
+| `HEADLESS` | `false`; visible browser for manual steps |
+| `BROWSER_CHANNEL` | Empty for bundled Chromium; `chrome` for installed Chrome |
+| `USER_DATA_DIR` | Bot example: `./data/telegram_profile` |
+| `TELEGRAM_PROXY_URL` | Optional HTTP(S) proxy for both Telegram HTTP clients; does not configure the store browser |
+| `DRY_RUN`, `LIVE_CHECKOUT_APPROVED` | `true`, `false`; live mode requires both an explicit configuration change and completed release gates |
+| `DEBUG_ARTIFACTS_ENABLED` | Must remain `false` for the Telegram app |
+| `OTP_INPUT_TIMEOUT_SECONDS` | 180; current input request lifetime, also bounded by the sale cutoff |
+| `CHECKOUT_TIMEOUT_SECONDS`, `PAYMENT_HANDOFF_TTL_SECONDS` | 180 each; separate bounded checkout and handoff lifetimes |
+| `GATEWAY_HOSTS` | `shaparak.ir`; HTTPS allowlist including its subdomains |
+
+An order admitted before 08:15 may finish within its bounded checkout deadline.
+No new order is admitted after the cutoff. The app never fills bank fields or
+claims that delivering a gateway link means payment succeeded. Cross-device
+payment-link usability remains unverified.
+
+## CLI compatibility and order recovery
+
+`main.py` remains a separate terminal-driven workflow. It starts browser activity
+immediately, uses fixed `POLL_INTERVAL` spacing and **does not use the Telegram
+dry-run switch or sale schedule**. Use the Telegram entry point for the daily
+armed workflow. `.env.example` documents the CLI settings.
+
+Both entry points share process/profile locks and the durable
+`data/order_attempt.json` barrier. A possible order remains blocked across
+cancellation, crashes and date changes until explicitly reconciled. Stop the app
+and inspect the store's existing orders before using the local recovery commands:
+
+```bash
+./run-telegram.sh --show-attempt
+# Only after checking the matching attempt and confirming that no order exists:
+./run-telegram.sh --resolve-attempt no_order --attempt-run-id EXACT_RUN_ID
+```
+
+See the [operations guide](docs/telegram-operations.md) for the `order_exists`
+resolution and uncertain checkout handling. Cancellation does not cancel an order
+that the store may already have recorded.
+
+## Development and verification
+
+Tests use the standard-library `unittest` runner, synthetic Telegram messages,
+an injectable clock and local browser fixtures. They never require real bot
+credentials. Browser fixtures block unmatched page requests. To use bundled
+Chromium:
+
+```bash
+./.venv/bin/python -m unittest discover -v
+```
+
+On the prepared Linux workstation, use installed Chrome:
+
+```bash
+TEST_BROWSER_CHANNEL=chrome ./.venv/bin/python -m unittest discover -v
+./.venv/bin/python -m compileall -q main.py config.py kavirtire telegram_bot tests
+./.venv/bin/python -m pip check
+bash -n run-telegram.sh
+git diff --check
+```
+
+`TEST_BROWSER_CHANNEL` only selects the fixture browser; tests do not consume the
+private `.env`. Four-tire rows remain explicit synthetic regression data even
+though the application default is two. Passing fixtures do not validate the live
+store's checkout selectors or browser-written identity/cache storage.
+
+## Project map and documentation
 
 ```text
-main.py                    ورودی، CLI، قفل و خروج کنترل‌شده
-config.py                  ENV و اعتبارسنجی
-kavirtire/
-  browser.py               پروفایل پایدار و export نشست
-  selectors.py             تمام selectorها و scriptهای مشاهده DOM
-  ui.py                    locator یکتا و ورودی ترمینال
-  text.py                  نرمال‌سازی فارسی و مقایسه محصول
-  login.py                 قوانین، کد ملی و OTP
-  guard.py                 توقف برای کنترل‌های سایت
-  shop.py                  پیدا کردن محصول و پایش موجودی
-  checkout.py              تعداد، تأیید سفارش و URL درگاه
-  workflow.py              state machine
-  diagnostics.py           log و debug با پوشاندن داده
-  security.py              دامنه درگاه، redaction و lock
-  errors.py                خطاهای قابل‌فهم
-tests/                     unit و fixtureهای Chromium
-telegram_bot/              کنترل دسترسی، پیام‌ها و lifecycle اپ تلگرام
-kavirtire/orchestration/   زمان‌بندی، worker، broker و barrier سفارش
-data/browser_profile/      هنگام اجرا ساخته می‌شود؛ محرمانه
-logs/ debug/               هنگام نیاز ساخته می‌شوند؛ خصوصی
+config.py                 Validated CLI and Telegram settings
+main.py                   Terminal workflow entry point
+run-telegram.sh            Linux launcher for the private Telegram app
+telegram_bot/             Access checks, short handlers, prompts and delivery
+kavirtire/                Browser, login, inventory and checkout services
+  orchestration/          One worker, Tehran schedule, input broker, order barrier
+tests/                    Unit tests and offline browser fixtures
+docs/                     Operations, architecture, status, plans and evidence
+requirements*.txt         Runtime dependencies and tested constraints
 ```
 
-نام `selectors.py` عمداً در package قرار گرفته است؛ فایل هم‌نام در ریشه، ماژول
-استاندارد Python را که asyncio استفاده می‌کند می‌پوشاند و اجرای برنامه را خراب می‌کند.
+Runtime `.env`, `data/`, `logs/`, `debug/`, `payment_url.txt`, `.venv/` and
+`.tools/` are private/ignored and are not part of a transferable installation.
+The browser profile still persists on disk. Telegram mode disables debug
+artifacts and separate session exports; the CLI can create masked debug files
+and a profile-bound merchant cookie backup. Neither is proof that the store
+never writes personal data into its own browser storage.
 
-Log در کنسول و `logs/kavirtire.log` ثبت می‌شود. URL خطا بدون path/query/token
-گزارش می‌شود. screenshot شامل mask ورودی‌ها، متن عددی حساس و secretهای شناخته‌شده
-است؛ HTML از clone پاک‌سازی‌شده با حذف scriptها، attributeها و مقادیر فرم ساخته
-می‌شود. OTP داخل آن ذخیره نمی‌شود. تصویر و HTML ممکن است همچنان نام/آدرس داشته
-باشند؛ قبل از اشتراک‌گذاری بازبینی کنید. کل `data/`، `.env`، `debug/`، `logs/`
-و `payment_url.txt` در Git ignore هستند. این پوشه‌ها را منتشر نکنید.
-
-قفل OS بعد از crash آزاد می‌شود؛ باقی‌ماندن فایل lock نشانه اجرای فعال نیست.
-قفل جلوی crash پس از ثبت سفارش یا اجرای دوباره توسط کاربر را نمی‌گیرد. پس از
-هر قطع‌شدن نامطمئن checkout، سفارش‌های موجود را در سایت بررسی کنید و ربات را
-کورکورانه دوباره اجرا نکنید. بدون API رسمی و کلید idempotency، تضمین exactly-once
-در چند اجرای مستقل ممکن نیست.
-
-## بررسی
-
-```powershell
-.\.venv\Scripts\python.exe -m compileall -q main.py config.py kavirtire tests
-.\.venv\Scripts\python.exe -m unittest discover -v
-.\.venv\Scripts\python.exe main.py --check-config
-```
-
-تست‌ها با `unittest` استاندارد هستند و وابستگی تازه ندارند. fixtureهای مرورگر
-headless هستند و پاسخ‌های ساختگی را با route محلی Playwright ارائه می‌کنند؛
-هیچ درخواست واقعی ورود، OTP یا سفارش نمی‌فرستند. Chromium باید نصب باشد.
-این تست‌ها جای تأیید دستی صفحات پشت ورود را نمی‌گیرند.
-
-## Selectors that may need adjustment
-
-بررسی عمومی واقعی با Chromium در ۲۷ اکتبر ۲۰۲۶:
-
-| بخش | وضعیت | selector / محل تنظیم |
-|---|---|---|
-| قوانین | تأیید شده | `LOGIN_TERMS_CSS = '#confirm'` در `/esale` |
-| ورود از قوانین | تأیید شده | link با نام دقیق `ورود به حساب` |
-| فرم کد ملی | تأیید شده | `/esale/login` و `input[name="n_code"]` |
-| ارسال کد ملی | تأیید شده؛ کلیک نشده | button با نام دقیق `ورود` |
-| OTP تک‌فیلدی | در اجرای واقعی شناسایی شد | `#code-verification`, `autocomplete="one-time-code"`، دکمه `ثبت`؛ رمز ۸کاراکتری حساس به بزرگی حروف؛ حالت چندفیلدی هنوز تأیید نشده |
-| تشخیص پروفایل/نشست | در اجرای واقعی تأیید شد | `خروج` و لینک `خرید` با آیکن Font Awesome؛ `PROFILE_SIGNALS`, `SHOP` |
-| کارت محصول هدف و وضعیت ناموجود | در اجرای واقعی تأیید شد | `.product`، `h2.title` و سایز در همان کارت؛ دکمه افزودن به سبد در حالت ناموجود پنهان است؛ کلیک در حالت موجود آزموده نشده |
-| به‌روزرسانی و پایان loading | در اجرای واقعی تأیید شد | `#refresh-availability` با نام `بروزرسانی موجودی`، `.products`؛ شمارنده داخلی سایت حدود ۴ ثانیه رعایت می‌شود |
-| تعداد select/input/+− و نمایش آن | پشت ورود؛ تأیید نشده | `QUANTITY_LABELS`, `QUANTITY_CSS`, `QUANTITY_DISPLAY`, `PLUS`, `MINUS` |
-| ناحیه و ردیف خلاصه و مراحل checkout | پشت ورود؛ تأیید نشده | `ORDER_REGIONS`, `ORDER_CONTAINERS`, `CHECKOUT_NEXT`, `TERMS` |
-| درگاه نهایی و redirect | بدون سفارش؛ تأیید نشده | `GATEWAY_HOSTS` در ENV |
-| کنترل‌های امنیتی بعدی | نمونه‌های عمومی؛ جامع نیست | `PROTECTION_WIDGETS`, `PROTECTION_TEXT` |
-
-fallbackهای CSS نامزدهای عمومی هستند، نه ادعای استخراج از DOM پشت ورود.
-با رسیدن به مراحل بعدی، selectorهای تأییدنشده ممکن است نیاز به اصلاح داشته باشند.
-اگر DOM محصول ساختار دیگری داشته باشد، برنامه مجاز به حدس‌زدن سفارش نیست؛ selector
-متمرکز را با شواهد صفحه واقعی اصلاح و fixture متناظر را اجرا کنید. در اجرای بعدی
-با تأیید کاربر، ورود واقعی، دریافت رمز توسط خود کاربر و پایش موجودی زنده انجام شد؛
-هیچ سفارش واقعی یا پرداختی انجام نشده است.
+Start with the [documentation index](docs/README.md), then use the
+[architecture and selector map](docs/architecture.md),
+[Telegram operations](docs/telegram-operations.md),
+[current implementation status](docs/telegram-implementation-status.md) and
+[dated verification record](docs/verification.md). Original plans are historical
+design references; current behavior is described by the code and these guides.

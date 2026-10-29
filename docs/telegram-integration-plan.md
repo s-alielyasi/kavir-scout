@@ -5,11 +5,16 @@
 and [operations](telegram-operations.md) for actual behavior, tests and remaining
 live release gates. The planning-only restrictions below describe the original
 documentation task; they do not describe the subsequent implementation session.
+The owner subsequently confirmed **2 tires** for the same model/size. Current
+code defaults and both examples now use two; four-tire requirements below are
+historical design context, not the current target. Real Telegram command replies
+are confirmed; live retailer validation remains pending. Start with the
+[documentation index](README.md) and [current architecture](architecture.md).
 
-**Status:** design and implementation handoff only; nothing in this document is implemented by this task.
+**Original task status (historical):** design and implementation handoff only; nothing in this document was implemented by that planning task.
 **Analysis date:** 2026-10-27. **Inspected baseline:** `3e078d361de703a97bc9ba12a576f6b952d679c4`, branch `main`.
 **Future runtime:** Python 3.11+, async Playwright, one private Telegram user/chat, one active device.
-**Authority:** the requirements recorded here govern the future Telegram implementation. Existing code and historical verification are evidence, not proof that a future site or gateway is unchanged.
+**Original scope:** these requirements governed the planned integration at the inspected baseline. Later owner decisions and current operations/status documentation describe the implemented behavior. Historical verification is not proof that a future site or gateway is unchanged.
 
 All proposed modules, signatures, configuration and tests below are future work. This task may change this Markdown document only. Do not install anything, configure Telegram, modify `.env`, start the browser, run a purchase or implement a phase while preparing this plan. Implementation belongs to a separately authorized session on the future device.
 
@@ -802,7 +807,7 @@ Updated 2026-10-29: checked items denote local implementation with fixture evide
 - [x] Add future `*.session` ignore; verify all private data stays out of Git.
 - [x] Pass all current regressions plus proposed authorization/schedule/state/concurrency/security tests.
 - [ ] Complete staged device validation and a real observation-only dry run.
-- [ ] Resolve quantity-four/site-policy and cross-device-payment gates before any live order.
+- [ ] Revalidate the confirmed target quantity/site-policy and cross-device-payment gates before any live order; original quantity four was superseded by the owner's confirmation of two.
 - [ ] Record owner authorization and rollout evidence; only then permit explicit production mode.
 
 ## 36. Future Device Handoff Guide
