@@ -316,3 +316,7 @@ The previous idle bot was stopped gracefully and the real bot restarted with the
 explicit inventory-test flag. It connected to Telegram and began waiting for the
 owner's runtime input. No browser profile had been initialized and no order marker
 existed at that checkpoint; real store login and inventory were not yet observed.
+No accepted national-ID reply arrived within the configured 180-second input TTL.
+The worker then ended at `WAITING_FOR_NATIONAL_ID` with a sanitized timeout and
+cleaned up the request. No browser, SMS, inventory request or order was started.
+The bot remained available for an owner-initiated `/test_inventory` retry.
