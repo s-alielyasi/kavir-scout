@@ -87,3 +87,4 @@ class StatusSnapshot:
     last_stock: str | None
     last_check: datetime | None
     next_action: datetime | None = None
+    inventory_test: bool = False

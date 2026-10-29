@@ -287,3 +287,32 @@ Remaining gates are unchanged: real Telegram-driven store login/OTP, scheduled
 observation/cancellation, current store terms, authenticated checkout selectors,
 browser storage privacy and usable payment handoff. Windows, native Python 3.11,
 bundled Chromium on this host and an online CVE audit were not validated here.
+
+## Explicit one-time inventory test — 2026-10-29
+
+The owner requested a supervised login-to-inventory check outside the sale hours,
+with national ID and OTP supplied only through the private bot conversation.
+Added `/test_inventory` and the explicit `--test-inventory` startup flag. They
+require dry-run configuration, share owner authorization and the single-worker
+and unresolved-attempt checks, and complete after one fresh inventory result.
+Available, out-of-stock and target-absent results all return before selection or
+checkout. The real clock, `.env` and daily sale schedule are not changed.
+
+The test uses a ten-minute monotonic lifetime, normal per-input TTLs and bounded
+cancellation/cleanup. Status identifies the one-time mode. Default startup
+remains idle; the explicit CLI flag starts the test only after polling is ready.
+
+**103 permanent tests passed in 127.575 seconds** using the documented installed
+Chrome command. New coverage includes all stock outcomes outside hours, no
+checkout/marker/payment, a normal scheduled run after a test, owner/live-mode
+refusal, concurrent admission, cancellation, elapsed timeout, command replay and
+explicit boot sequencing. A real-browser fixture at simulated 21:03 completed
+correlated national-ID/OTP login, exactly one inventory refresh and an unavailable
+result with zero selection/submission. Compile/import, grammar, config, Bash and
+Git whitespace checks also passed. These are synthetic checks; live evidence is
+recorded separately below when observed.
+
+The previous idle bot was stopped gracefully and the real bot restarted with the
+explicit inventory-test flag. It connected to Telegram and began waiting for the
+owner's runtime input. No browser profile had been initialized and no order marker
+existed at that checkpoint; real store login and inventory were not yet observed.

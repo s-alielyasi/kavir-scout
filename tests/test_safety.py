@@ -118,7 +118,7 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SafetyError):
             await self.checkout.verify_order()
 
-    async def bot_flow(self, live):
+    async def bot_flow(self, live, *, inventory_test=False):
         quantity = 2 if live else 4
         base = BotSettings.from_env({'TELEGRAM_BOT_TOKEN': '123:fixture_abcdefghijklmnopqrstuvwxyz',
             'TELEGRAM_ALLOWED_USER_ID': '123', 'TELEGRAM_ALLOWED_CHAT_ID': '123',
@@ -126,10 +126,14 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
         config = replace(base.retailer, root=self.config.root, user_data_dir=self.config.user_data_dir,
                          timeout_ms=1000)
         settings = replace(base, retailer=config, dry_run=not live, live_checkout_approved=live, handoff_ttl=1)
-        clock = FakeClock()
+        clock = FakeClock('21:03:00' if inventory_test else '08:03:00')
         fixture = row(quantity='1', maximum='4').replace('<button>انتخاب</button>',
             '<button onclick="window.selected=(window.selected||0)+1;this.remove();document.querySelector(\'#submit\').hidden=false">انتخاب</button>')
-        shop = '<button>بروزرسانی موجودی</button>' + fixture + '''<button id="submit" hidden
+        if inventory_test:
+            fixture = fixture.replace('</article>', '<span>ناموجود</span></article>')
+        refresh = '''<button onclick="window.refreshes=(window.refreshes||0)+1;
+            document.querySelector('article').outerHTML=document.querySelector('article').outerHTML">بروزرسانی موجودی</button>'''
+        shop = refresh + fixture + '''<button id="submit" hidden
             onclick="window.submitted=(window.submitted||0)+1;window.open('https://bpm.shaparak.ir/pay?token=bot-fixture')">ثبت سفارش</button>'''
         auth = '''<p>امکان ۲ حلقه تایر در ۶ ماه فراهم است.</p><label>کد ملی<input name="n_code"></label>
             <button onclick="document.body.innerHTML=window.otpForm">ورود</button>'''
@@ -180,7 +184,10 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
             await handlers.text(Update.de_json({'update_id':update_id,'message':message}, None), None)
         try:
             with patch.object(self.page, 'locator', side_effect=track):
-                await controller.arm(AuthorizedOwner(123,123))
+                if inventory_test:
+                    await controller.test_inventory(AuthorizedOwner(123,123))
+                else:
+                    await controller.arm(AuthorizedOwner(123,123))
                 await respond('national_id', '0012345678')
                 await respond('otp', 'AbCd1234')
                 await asyncio.wait_for(asyncio.shield(controller._task), 10)
@@ -202,6 +209,10 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await self.page.evaluate('window.submitted||0'), 0)
                 self.assertFalse(controller.attempts.blocked())
                 self.assertTrue(session.policy_disallowed)
+                if inventory_test:
+                    self.assertEqual(controller.outcome, 'inventory_test_out_of_stock')
+                    self.assertEqual(await self.page.evaluate('window.refreshes'), 1)
+                    self.assertFalse((config.root / 'data/order_attempt.json').exists())
             for call in bot.send_message.await_args_list:
                 self.assertNotIn('0012345678', str(call))
                 self.assertNotIn('AbCd1234', str(call))
@@ -210,6 +221,9 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_telegram_login_to_dry_run_uses_real_browser_without_selection(self):
         await self.bot_flow(live=False)
+
+    async def test_after_hours_login_and_one_inventory_refresh_stops_without_selection(self):
+        await self.bot_flow(live=False, inventory_test=True)
 
     async def test_telegram_login_to_single_fixture_order_and_private_gateway(self):
         await self.bot_flow(live=True)

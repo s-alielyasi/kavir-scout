@@ -1,5 +1,6 @@
 """One browser owner; short commands never await the purchase workflow."""
 import asyncio
+import logging
 from datetime import timedelta
 from uuid import uuid4
 
@@ -10,6 +11,9 @@ from kavirtire.orchestration.models import (
     AuthorizedOwner, Receipt, StatusSnapshot, WorkflowState as S, validate_transition)
 from kavirtire.orchestration.order_attempts import OrderAttemptStore
 from kavirtire.orchestration.scheduling import TehranClock, in_tehran
+
+LOG = logging.getLogger('kavir')
+INVENTORY_TEST_TIMEOUT = 600
 
 
 class WindowClosed(Exception):
@@ -78,6 +82,8 @@ class PurchaseOrchestrator:
         self._last_now = None
         self._last_cycle_start = None
         self._closing = False
+        self._inventory_test = False
+        self._test_deadline = None
 
     @property
     def active(self):
@@ -91,7 +97,8 @@ class PurchaseOrchestrator:
 
     def status(self):
         now = in_tehran(self.clock.now())
-        decision = self.settings.schedule.decide(now, self.sale_date) if self.sale_date else None
+        decision = (self.settings.schedule.decide(now, self.sale_date)
+                    if self.sale_date and not self._inventory_test else None)
         pending = self.broker.pending
         next_action = None
         if self.active and decision:
@@ -99,13 +106,22 @@ class PurchaseOrchestrator:
             if self.state == S.MONITORING and decision.interval and self._last_cycle_start is not None:
                 seconds = max(0, self._last_cycle_start + decision.interval - self.clock.monotonic())
                 next_action = min(now + timedelta(seconds=seconds), decision.boundary)
+        elif self.active and self._inventory_test:
+            next_action = pending.deadline if pending else now + timedelta(
+                seconds=max(0, self._test_deadline - self.clock.monotonic()))
         return StatusSnapshot(self.state, now, self.run_id, self.sale_date, self.settings.dry_run,
             self.settings.retailer.target_product, self.settings.retailer.target_size,
             self.settings.retailer.target_quantity, decision.interval if decision else None,
             pending.request_id if pending and pending.kind == 'manual' else None,
-            self.outcome, self.last_stock, self.last_check, next_action)
+            self.outcome, self.last_stock, self.last_check, next_action, self._inventory_test)
 
     async def arm(self, owner):
+        return await self._start(owner, inventory_test=False)
+
+    async def test_inventory(self, owner):
+        return await self._start(owner, inventory_test=True)
+
+    async def _start(self, owner, *, inventory_test):
         if owner != self.owner:
             return Receipt(False, 'unauthorized')
         async with self._lock:
@@ -114,7 +130,9 @@ class PurchaseOrchestrator:
             if self.active:
                 return Receipt(False, 'already_active', self.run_id)
             now = in_tehran(self.clock.now())
-            if self.settings.schedule.decide(now, now.date()).phase == 'closed':
+            if inventory_test and not self.settings.dry_run:
+                return Receipt(False, 'test_requires_dry_run')
+            if not inventory_test and self.settings.schedule.decide(now, now.date()).phase == 'closed':
                 return Receipt(False, 'sale_window_ended')
             if self.attempts.blocked():
                 return Receipt(False, 'unresolved_order_attempt')
@@ -125,10 +143,12 @@ class PurchaseOrchestrator:
             self._deadline_expired = self._clock_failed = False
             self._last_now = now
             self._last_cycle_start = None
+            self._inventory_test = inventory_test
+            self._test_deadline = self.clock.monotonic() + INVENTORY_TEST_TIMEOUT if inventory_test else None
             self.transition(S.WAITING_FOR_NATIONAL_ID)
             self._task = asyncio.create_task(self._worker(), name='kavir-workflow')
             self._task.add_done_callback(self._settled)
-            return Receipt(True, 'armed', self.run_id)
+            return Receipt(True, 'inventory_test_started' if inventory_test else 'armed', self.run_id)
 
     def _settled(self, task):
         if self._task is not task:
@@ -175,13 +195,19 @@ class PurchaseOrchestrator:
         if self._last_now is not None and now < self._last_now:
             raise ClockInconsistent
         self._last_now = now
-        if self.settings.schedule.decide(now, self.sale_date).phase == 'closed':
+        if self._inventory_test:
+            if self.clock.monotonic() >= self._test_deadline:
+                raise WindowClosed
+        elif self.settings.schedule.decide(now, self.sale_date).phase == 'closed':
             raise WindowClosed
         return now
 
     def input_deadline(self):
         deadline = self.clock.now() + timedelta(seconds=self.settings.otp_timeout)
-        if not self._admitted:
+        if self._inventory_test:
+            deadline = min(deadline, self.clock.now() + timedelta(
+                seconds=max(0, self._test_deadline - self.clock.monotonic())))
+        elif not self._admitted:
             deadline = min(deadline, self.settings.schedule.cutoff(self.sale_date))
         return deadline
 
@@ -260,7 +286,7 @@ class PurchaseOrchestrator:
     async def _worker(self):
         self._started = True
         watchdog = asyncio.create_task(self._watch_deadline())
-        reminder = asyncio.create_task(self._remind())
+        reminder = None if self._inventory_test else asyncio.create_task(self._remind())
         identity = ''
         try:
             if self._cancel.is_set():
@@ -281,9 +307,10 @@ class PurchaseOrchestrator:
                     await self._notify('requested_quantity_disallowed')
                 self.transition(S.READY_FOR_SALE)
                 last_start = None
-                refresh = False
+                refresh = self._inventory_test
                 while True:
-                    await self._wait_cycle(last_start)
+                    if not self._inventory_test:
+                        await self._wait_cycle(last_start)
                     self.transition(S.MONITORING)
                     last_start = self.clock.monotonic()
                     self._last_cycle_start = last_start
@@ -301,13 +328,17 @@ class PurchaseOrchestrator:
                             identity = ''
                         self._authenticated = True
                         self.transition(S.READY_FOR_SALE)
-                        refresh = False
+                        refresh = self._inventory_test
                         last_start = None
                         continue
                     self.ensure_open()  # discard a late response, even if in stock
                     if stock not in ('available', 'out_of_stock', 'target_absent'):
                         raise RuntimeError('Unknown stock outcome.')
                     self.last_stock, self.last_check = stock, self.clock.now()
+                    if self._inventory_test:
+                        self.outcome = 'inventory_test_' + stock
+                        self.transition(S.COMPLETED)
+                        return
                     refresh = True
                     if stock != 'available':
                         continue
@@ -330,28 +361,33 @@ class PurchaseOrchestrator:
                     result = None
                     return
         except WindowClosed:
-            self.outcome = 'sale_window_ended'
+            self.outcome = 'inventory_test_timed_out' if self._inventory_test else 'sale_window_ended'
             self.transition(S.COMPLETED)
         except ClockInconsistent:
             self.outcome = 'clock_inconsistent'
             self.transition(S.FAILED)
         except asyncio.CancelledError:
             if self._deadline_expired or self._clock_failed:
-                self.outcome = 'clock_inconsistent' if self._clock_failed else 'sale_window_ended'
+                self.outcome = ('clock_inconsistent' if self._clock_failed else
+                                'inventory_test_timed_out' if self._inventory_test else 'sale_window_ended')
                 self.state = S.FAILED if self._clock_failed else S.COMPLETED
             else:
                 self.outcome = 'cancelled_order_may_exist' if self._admitted else 'cancelled'
                 self.state = S.CANCELLED
-        except Exception:
+        except Exception as error:
+            LOG.warning('Workflow stopped at %s (%s); details omitted.', self.state.name, type(error).__name__)
             self.outcome = 'order_requires_reconciliation' if self._admitted else 'workflow_failed'
             if self.state != S.COMPLETED:
                 self.transition(S.FAILED)
         finally:
             identity = ''
             self.broker.cancel()
-            for task in (watchdog, reminder):
+            timers = [task for task in (watchdog, reminder) if task is not None]
+            for task in timers:
                 task.cancel()
-            await asyncio.gather(watchdog, reminder, return_exceptions=True)
+            await asyncio.gather(*timers, return_exceptions=True)
+            if self._inventory_test:
+                LOG.info('Inventory observation test finished: %s.', self.outcome)
             try:
                 await self._notify(self.outcome or 'workflow_finished')
             finally:

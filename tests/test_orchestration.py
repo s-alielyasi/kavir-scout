@@ -82,6 +82,79 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.service.checkout.assert_not_awaited()
         self.assertFalse(self.controller.attempts.blocked())
 
+    async def test_inventory_check_ignores_hours_and_finishes_for_each_stock_result(self):
+        self.clock.current = self.clock.current.replace(hour=21)
+        for stock in ('available', 'out_of_stock', 'target_absent'):
+            self.service.observe.side_effect = None
+            self.service.observe.return_value = stock
+            self.service.observe.reset_mock()
+            receipt = await self.controller.test_inventory(self.owner)
+            self.assertTrue(receipt.accepted)
+            await self.settle()
+            self.assertEqual(self.controller.outcome, 'inventory_test_' + stock)
+            self.service.observe.assert_awaited_once_with(refresh=True)
+            self.service.preflight_live.assert_not_awaited()
+            self.service.checkout.assert_not_awaited()
+            self.notifications.payment.assert_not_awaited()
+            self.assertFalse(self.controller.attempts.blocked())
+            self.assertTrue(self.controller.status().inventory_test)
+            self.assertIsNone(self.controller.status().interval)
+            self.assertFalse((Path(self.tmp.name) / 'data/order_attempt.json').exists())
+
+    async def test_inventory_check_does_not_wait_for_morning_or_change_normal_schedule(self):
+        self.clock.current = self.clock.current.replace(hour=7, minute=50)
+        before = self.clock.now()
+        await self.controller.test_inventory(self.owner)
+        await self.settle()
+        self.assertEqual(self.clock.now(), before)
+        self.clock.current = self.clock.current.replace(hour=21)
+        self.assertFalse((await self.controller.arm(self.owner)).accepted)
+        self.clock.current = self.clock.current.replace(hour=7, minute=59, second=59)
+        await self.controller.arm(self.owner)
+        await self.settle()
+        self.assertFalse(self.controller.status().inventory_test)
+        self.assertEqual(self.observed[-1][0].hour, 8)
+
+    async def test_inventory_check_requires_owner_and_observation_mode(self):
+        self.assertFalse((await self.controller.test_inventory(AuthorizedOwner(999, 123))).accepted)
+        self.controller.settings = replace(self.settings, dry_run=False, live_checkout_approved=True)
+        receipt = await self.controller.test_inventory(self.owner)
+        self.assertFalse(receipt.accepted)
+        self.assertEqual(receipt.reason, 'test_requires_dry_run')
+        self.assertEqual(self.entered, 0)
+        self.transport.request_national_id.assert_not_awaited()
+
+    async def test_inventory_check_shares_single_worker_and_remains_cancellable(self):
+        # An async gate keeps the current request open while commands return.
+        async def wait_for_owner():
+            await asyncio.Event().wait()
+        self.transport.request_national_id.side_effect = wait_for_owner
+        receipts = await asyncio.gather(*(self.controller.test_inventory(self.owner) for _ in range(3)))
+        self.assertEqual(sum(r.accepted for r in receipts), 1)
+        self.assertEqual((await self.controller.arm(self.owner)).reason, 'already_active')
+        await asyncio.sleep(0)
+        self.assertTrue(self.controller.status().inventory_test)
+        self.assertTrue((await self.controller.cancel(self.owner)).accepted)
+        await self.settle()
+        self.assertEqual(self.controller.state, S.CANCELLED)
+        self.assertEqual(self.entered, 0)
+
+    async def test_inventory_check_uses_bounded_elapsed_deadline_and_no_sale_reminder(self):
+        self.clock.current = self.clock.current.replace(hour=21)
+        async def wait_for_owner():
+            await asyncio.Event().wait()
+        self.transport.request_national_id.side_effect = wait_for_owner
+        await self.controller.test_inventory(self.owner)
+        await asyncio.sleep(0)
+        self.assertGreater(self.controller.input_deadline(), self.clock.now())
+        self.clock.elapsed += 590
+        self.assertLessEqual((self.controller.input_deadline() - self.clock.now()).total_seconds(), 10)
+        self.clock.elapsed += 10
+        await asyncio.wait_for(self.controller._task, 1)
+        self.assertEqual(self.controller.outcome, 'inventory_test_timed_out')
+        self.assertFalse(any(c.args == ('login_reminder',) for c in self.notifications.publish.await_args_list))
+        self.assertEqual(self.entered, 0)
+
     async def test_unauthorized_and_late_arm_do_not_open_browser(self):
         self.assertFalse((await self.controller.arm(AuthorizedOwner(999, 123))).accepted)
         self.clock.current = self.clock.current.replace(hour=8, minute=15)

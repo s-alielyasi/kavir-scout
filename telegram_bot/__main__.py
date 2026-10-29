@@ -11,10 +11,14 @@ def main():
         return 2
     parser = argparse.ArgumentParser(description='Private Kavir Scout Telegram controller; defaults to dry run.')
     parser.add_argument('--check-config', action='store_true')
+    parser.add_argument('--test-inventory', action='store_true',
+                        help='Explicitly start one dry-run login/inventory test without the sale schedule.')
     parser.add_argument('--show-attempt', action='store_true', help='Show the nonsecret local order barrier.')
     parser.add_argument('--resolve-attempt', choices=('no_order', 'order_exists'))
     parser.add_argument('--attempt-run-id', help='Exact run ID from --show-attempt; resolution requires local review.')
     args = parser.parse_args()
+    if args.test_inventory and (args.check_config or args.show_attempt or args.resolve_attempt):
+        parser.error('--test-inventory cannot be combined with inspection/recovery flags.')
     try:
         from config import load_bot_settings, load_config
         from kavirtire.security import InstanceLock, SecretFilter
@@ -41,7 +45,7 @@ def main():
             locks.enter_context(InstanceLock(settings.retailer.root / 'data/bot.lock'))
             locks.enter_context(InstanceLock(settings.retailer.user_data_dir / '.kavir-scout.lock'))
             runtime = build_application(settings)
-            asyncio.run(serve(runtime))
+            asyncio.run(serve(runtime, test_inventory=args.test_inventory))
         return 0
     except (KeyboardInterrupt, asyncio.CancelledError):
         return 130

@@ -108,6 +108,7 @@ claim about the store's current sale hours.
 |---|---|
 | `/start` | Show help and the configured target; no browser or purchase starts. |
 | `/arm` | Arm one run for today's Tehran date; reject after the cutoff. |
+| `/test_inventory` | Run one dry-run login/inventory check at any time, then stop. |
 | `/status` | Show a nonsecret, copyable status snapshot. |
 | `/cancel` | Request cancellation and bounded cleanup. |
 | `/resume` | Resume only when replying to the current manual checkpoint; alternatively send `/resume CHECKPOINT_ID`. |
@@ -115,6 +116,31 @@ claim about the store's current sale hours.
 General responses can be copied and forwarded. Login prompts and payment-link
 messages retain content protection. Incoming credentials are deleted on a
 best-effort basis; Telegram is not an end-to-end encrypted credential channel.
+
+## One-time inventory test
+
+With the bot running and `DRY_RUN=true`, send `/test_inventory` in the allowed
+private chat. It requests national ID and OTP through the same correlated prompts
+as the daily workflow, respects manual challenges and refresh cooldowns, then
+refreshes/checks inventory once. It reports available, unavailable or target
+absent and finishes. It never selects a product, changes quantity or enters
+checkout, even if the target is available.
+
+This test ignores the sale window without changing the real clock, `.env` or
+daily `/arm` schedule. It shares the existing single-worker lock, cancellation,
+authorization and unresolved-order barrier. Its total elapsed lifetime is ten
+minutes; each input still has its normal shorter TTL. Live-mode configuration
+rejects this test. `/status` identifies the one-time check and `/cancel` stops it.
+
+For an explicitly requested test at process startup, stop the existing instance
+first and run:
+
+```bash
+./run-telegram.sh --test-inventory
+```
+
+This flag immediately starts the one-time test after Telegram polling is ready;
+normal startup remains idle. After the test, the bot keeps listening for commands.
 
 ## Configuration
 

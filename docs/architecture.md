@@ -67,6 +67,13 @@ stop at 08:15. Dry run ends before selection. Live admission requires both expli
 configuration gates and a compatible observed purchase policy. Before a possible
 order action, the durable attempt marker is written atomically with fsync.
 
+The explicitly requested `/test_inventory` command (or `--test-inventory` boot
+flag) instead runs login and one inventory refresh/check without the sale window.
+It requires dry-run settings, shares single-worker/authorization/attempt checks
+and returns before any selection for every recognized stock result. Its ten-minute
+deadline uses elapsed monotonic time; input TTL and cancellation still apply.
+It does not modify the actual clock, private settings or the daily schedule.
+
 Cancellation stops further actions and bounds cleanup; it cannot undo a server
 side effect. An unresolved marker survives restarts and date changes. Local
 reconciliation requires the exact run ID while both project/profile locks are

@@ -49,7 +49,7 @@ def build_application(settings, *, service_factory=None, clock=None) -> BotRunti
                                       notifier, service_factory, clock=clock)
     handlers = Handlers(controller, app.bot, started_at=datetime.now(timezone.utc))
     app.add_handler(TypeHandler(Update, handlers.gate), group=-100)
-    for name in ('start', 'arm', 'status', 'cancel', 'resume'):
+    for name in ('start', 'arm', 'test_inventory', 'status', 'cancel', 'resume'):
         app.add_handler(CommandHandler(name, getattr(handlers, name)), group=0)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.text), group=0)
 
@@ -64,7 +64,7 @@ def build_application(settings, *, service_factory=None, clock=None) -> BotRunti
     return BotRuntime(app, controller, handlers)
 
 
-async def serve(runtime: BotRuntime, stop: asyncio.Event | None = None):
+async def serve(runtime: BotRuntime, stop: asyncio.Event | None = None, *, test_inventory: bool = False):
     app = runtime.application
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -86,6 +86,10 @@ async def serve(runtime: BotRuntime, stop: asyncio.Event | None = None):
                 await app.updater.start_polling(drop_pending_updates=True, allowed_updates=['message'],
                                                  error_callback=polling_error, bootstrap_retries=0)
                 LOG.info('Telegram ready; idle until an authorized daily /arm.')
+                if test_inventory:
+                    receipt = await runtime.controller.test_inventory(runtime.controller.owner)
+                    if not receipt.accepted:
+                        LOG.warning('Explicit inventory test was not admitted; bot remains idle.')
                 await stop.wait()
             finally:
                 begin_shutdown = getattr(runtime.controller, 'begin_shutdown', None)

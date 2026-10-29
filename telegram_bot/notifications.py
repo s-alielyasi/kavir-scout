@@ -4,6 +4,10 @@ from telegram.error import RetryAfter, TelegramError
 from kavirtire.security import gateway_url
 
 EVENTS = {
+    'inventory_test_available': 'تست موجودی تمام شد: محصول هدف موجود بود. هیچ محصولی انتخاب و هیچ سفارشی ثبت نشد.',
+    'inventory_test_out_of_stock': 'تست موجودی تمام شد: محصول هدف شناسایی شد ولی ناموجود بود. هیچ محصولی انتخاب و هیچ سفارشی ثبت نشد.',
+    'inventory_test_target_absent': 'تست موجودی تمام شد: محصول هدف در فهرست فعلی پیدا نشد. هیچ محصولی انتخاب و هیچ سفارشی ثبت نشد.',
+    'inventory_test_timed_out': 'مهلت ده‌دقیقه‌ای تست موجودی تمام شد؛ هیچ سفارش تازه‌ای آغاز نشد.',
     'login_reminder': 'یادآوری ورود: اجرای امروز فعال است و ورود هنوز کامل نشده است.',
     'requested_quantity_disallowed': 'تعداد درخواستی با سقف مشاهده‌شدهٔ سایت سازگار نیست. حالت مشاهده ادامه دارد و هیچ انتخاب یا سفارشی انجام نمی‌شود.',
     'dry_run_target_found': 'DRY RUN\nمحصول هدف پیدا شد. انتخاب محصول و ثبت سفارش انجام نشد.',

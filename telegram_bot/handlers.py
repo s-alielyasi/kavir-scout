@@ -7,6 +7,8 @@ from telegram_bot.notifications import TelegramNotifications
 
 RECEIPTS = {
     'armed': 'اجرای امروز فعال شد. ورودی بعدی را در پاسخ به پیام خودش بفرستید.',
+    'inventory_test_started': 'تست یک‌بارهٔ ورود و موجودی شروع شد؛ مستقل از ساعت و بدون سفارش است. ورودی را در پاسخ به پیام خودش بفرستید.',
+    'test_requires_dry_run': 'تست موجودی فقط با DRY_RUN=true قابل اجراست؛ تنظیم محلی را بررسی کنید.',
     'already_active': 'یک اجرا از قبل فعال است؛ /status را ببینید.',
     'sale_window_ended': 'بازهٔ امروز پایان یافته است؛ مرورگر باز نشد.',
     'unresolved_order_attempt': 'تلاش سفارش قبلی تعیین تکلیف نشده است؛ راهنمای بازیابی محلی را بخوانید.',
@@ -58,6 +60,7 @@ class Handlers:
             f'حالت مشاهده: {"فعال" if self.controller.settings.dry_run else "غیرفعال"}\n'
             'زمان تهران: ۸:۰۰ تا ۸:۱۵؛ فاصله‌ها ۵، ۱۵ و ۳۰ ثانیه.\n'
             '/arm فعال‌سازی امروز\n/status وضعیت\n/cancel توقف\n/resume ادامهٔ مرحلهٔ فعلی\n'
+            '/test_inventory تست یک‌بارهٔ ورود و موجودی، مستقل از ساعت و بدون سفارش\n'
             'این دستور خرید را آغاز نمی‌کند. سقف خرید سایت همیشه مقدم است.')
 
     async def _receipt(self, receipt):
@@ -66,6 +69,10 @@ class Handlers:
     async def arm(self, update, context):
         if self._admit(update):
             await self._receipt(await self.controller.arm(self.controller.owner))
+
+    async def test_inventory(self, update, context):
+        if self._admit(update):
+            await self._receipt(await self.controller.test_inventory(self.controller.owner))
 
     async def cancel(self, update, context):
         if self._admit(update):
@@ -84,10 +91,11 @@ class Handlers:
         if not self._admit(update):
             return
         status = self.controller.status()
+        interval = 'یک بررسی بدون زمان‌بندی' if status.inventory_test else status.interval or 'خارج از بازه'
         await self.notifications.send(
             f'وضعیت: {STATES[status.state.name]}\nزمان تهران: {status.now:%Y-%m-%d %H:%M:%S}\n'
             f'محصول: {status.product} — {status.size} — تعداد {status.quantity}\n'
-            f'حالت مشاهده: {"فعال" if status.dry_run else "غیرفعال"}\nفاصلهٔ فعلی: {status.interval or "خارج از بازه"}\n'
+            f'حالت مشاهده: {"فعال" if status.dry_run else "غیرفعال"}\nفاصلهٔ فعلی: {interval}\n'
             f'آخرین نتیجه: {status.last_stock or "—"}\nآخرین بررسی: {status.last_check or "—"}\n'
             f'زمان اقدام بعدی: {status.next_action or "—"}\nنتیجه اجرا: {status.outcome or "—"}\n'
             f'مرحلهٔ قابل ادامه: {status.checkpoint_id or "—"}')

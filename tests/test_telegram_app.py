@@ -80,6 +80,27 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
             await TelegramNotifications(bot, self.settings()).payment('https://bpm.shaparak.ir/pay?token=fixture')
         self.assertNotIn('secret-fixture', str(error.exception))
 
+    async def test_explicit_boot_test_waits_for_polling_and_is_not_an_implicit_arm(self):
+        calls = []
+        app = MagicMock()
+        app.__aenter__ = AsyncMock(return_value=app)
+        app.__aexit__ = AsyncMock(return_value=False)
+        app.running = True
+        app.start = AsyncMock()
+        app.stop = AsyncMock()
+        async def polling(**kwargs):
+            calls.append('polling')
+        async def test_inventory(owner):
+            self.assertEqual(calls, ['polling'])
+            calls.append('test')
+            return SimpleNamespace(accepted=True)
+        app.updater = SimpleNamespace(running=False, start_polling=polling, stop=AsyncMock())
+        controller = SimpleNamespace(owner='fixture-owner', test_inventory=test_inventory, close=AsyncMock())
+        stop = asyncio.Event()
+        stop.set()
+        await serve(SimpleNamespace(application=app, controller=controller), stop, test_inventory=True)
+        self.assertEqual(calls, ['polling', 'test'])
+
     async def test_cleanup_failure_still_stops_sdk_and_discards_queued_commands(self):
         app = MagicMock()
         app.__aenter__ = AsyncMock(return_value=app)

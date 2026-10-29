@@ -38,6 +38,7 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
         self.controller = SimpleNamespace(owner=OWNER, broker=InputBroker(), run_id='a'*32,
             settings=self.settings, input_deadline=lambda: datetime.now(timezone.utc)+timedelta(seconds=30),
             arm=AsyncMock(return_value=Receipt(True, 'armed')), cancel=AsyncMock(return_value=Receipt(True, 'cancellation_requested')),
+            test_inventory=AsyncMock(return_value=Receipt(True, 'inventory_test_started')),
             resume=AsyncMock(return_value=Receipt(False, 'reply_to_current_checkpoint')))
         self.handlers = Handlers(self.controller, self.bot, started_at=NOW)
 
@@ -54,9 +55,10 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(authorized(candidate, OWNER, NOW))
 
     async def test_unauthorized_commands_have_no_domain_or_reply_effect(self):
-        for method in (self.handlers.arm, self.handlers.cancel, self.handlers.resume, self.handlers.status, self.handlers.text):
+        for method in (self.handlers.arm, self.handlers.test_inventory, self.handlers.cancel, self.handlers.resume, self.handlers.status, self.handlers.text):
             await method(update(uid=999), SimpleNamespace(args=[]))
         self.controller.arm.assert_not_awaited()
+        self.controller.test_inventory.assert_not_awaited()
         self.controller.cancel.assert_not_awaited()
         self.controller.resume.assert_not_awaited()
         self.bot.send_message.assert_not_awaited()
@@ -65,6 +67,12 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
         await self.handlers.arm(update('/arm'), SimpleNamespace(args=[]))
         await self.handlers.arm(update('/arm'), SimpleNamespace(args=[]))
         self.controller.arm.assert_awaited_once()
+
+    async def test_inventory_command_is_deduplicated_and_reply_is_copyable(self):
+        for _ in range(2):
+            await self.handlers.test_inventory(update('/test_inventory'), None)
+        self.controller.test_inventory.assert_awaited_once_with(OWNER)
+        self.assertFalse(self.bot.send_message.await_args.kwargs['protect_content'])
 
     async def test_start_status_and_events_are_copyable(self):
         self.controller.status = lambda: StatusSnapshot(
