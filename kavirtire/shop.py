@@ -2,7 +2,7 @@
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
-from playwright.async_api import Locator, Page, TimeoutError
+from playwright.async_api import Locator, Page, TimeoutError, expect
 from config import Config
 from kavirtire import selectors as S
 from kavirtire.browser import retry_navigation
@@ -10,28 +10,35 @@ from kavirtire.diagnostics import LOG
 from kavirtire.errors import AmbiguousElement, BotError, SessionExpired, SafetyError
 from kavirtire.guard import HumanGuard
 from kavirtire.text import matches_product, text_pattern, parse_quantity
-from kavirtire.ui import Scope, button, field, has_text, settle, wait_loading
+from kavirtire.ui import Scope, button, field, has_text, settle, wait_loading, require_merchant
 from kavirtire.text import normalize_text
 
 
 async def product_container(page: Scope, selectors: tuple[str, ...], config: Config) -> Locator | None:
     """Find exactly one visible row/card containing both complete target identifiers."""
-    for selector in selectors:
-        # Playwright has_text uses concatenated textContent; adjacent block
-        # headings and size spans can lose their rendered separator. Compare
-        # inner_text below so complete model boundaries follow the visible UI.
-        candidates = page.locator(selector)
-        matches = []
-        for index in range(await candidates.count()):
-            item = candidates.nth(index)
-            if await item.is_visible() and matches_product(await item.inner_text(),
-                                                          config.target_product, config.target_size):
-                matches.append(item)
-        if len(matches) > 1:
-            raise AmbiguousElement('Multiple target rows found; no product will be selected.')
-        if matches:
-            return matches[0]
-    return None
+    require_merchant(page)
+    # A CSS union deduplicates elements reached by several strategies. Prefer
+    # the smallest matching container so a layout wrapper cannot hide siblings.
+    candidates = page.locator(','.join(selectors))
+    matches = []
+    for index in range(await candidates.count()):
+        item = candidates.nth(index)
+        if await item.is_visible() and matches_product(await item.inner_text(),
+                                                       config.target_product, config.target_size):
+            matches.append(item)
+    leaves = []
+    for item in matches:
+        contains_match = False
+        for other in matches:
+            if await item.evaluate('(el, other) => el !== other && el.contains(other)',
+                                   await other.element_handle()):
+                contains_match = True
+                break
+        if not contains_match:
+            leaves.append(item)
+    if len(leaves) > 1:
+        raise AmbiguousElement('Multiple target rows found; no product will be selected.')
+    return leaves[0] if leaves else None
 
 
 class Shop:
@@ -41,6 +48,17 @@ class Shop:
 
     async def find_target_product(self) -> Locator | None:
         return await product_container(self.page, S.PRODUCT_CONTAINERS, self.config)
+
+    async def inventory_recognized(self) -> bool:
+        if await button(self.page, S.REFRESH) or await self.find_target_product():
+            return True
+        rows = self.page.locator(','.join(S.PRODUCT_CONTAINERS))
+        for index in range(await rows.count()):
+            item = rows.nth(index)
+            if await item.is_visible() and re.search(S.TIRE_SIZE_PATTERN,
+                    normalize_text(await item.inner_text()), re.I):
+                return True
+        return False
 
     async def session_expired(self) -> bool:
         # Only visible login DOM can send the workflow back to authentication.
@@ -81,6 +99,17 @@ class Shop:
             raise SessionExpired('Session expired before inventory refresh.')
         LOG.info('Refreshing inventory...')
         refresh = await button(self.page, S.REFRESH)
+        while refresh and not await refresh.is_enabled():
+            # Disabled controls may represent a site-enforced cooldown. Never
+            # navigate around them; wait or return to a human checkpoint.
+            try:
+                await expect(refresh).to_be_enabled(timeout=self.config.timeout_ms)
+            except AssertionError:
+                await self.guard.interactions.request_manual_action('inventory_cooldown')
+                await self.guard.check()
+                if await self.session_expired():
+                    raise SessionExpired('Session expired during inventory cooldown.')
+                refresh = await button(self.page, S.REFRESH)
         if refresh and await refresh.is_enabled():
             # Watch the list parent, not the button or whole page. Replacing a
             # row with identical text is still a new inventory rendering.
@@ -158,7 +187,9 @@ class Shop:
         select = await button(card, S.SELECT_PRODUCT)
         verified_purchase = False
         if select:
-            safe_select = await button(card, S.SAFE_SELECTION)
+            name = normalize_text(await select.get_attribute('aria-label') or await select.inner_text())
+            name = re.sub(r'[\ue000-\uf8ff]', '', name).strip()
+            safe_select = any(text_pattern(t).fullmatch(name) for t in S.SAFE_SELECTION)
             # A generic 'Buy' may create an order immediately. Such actions
             # require the requested quantity to be readable before the click.
             if not safe_select:

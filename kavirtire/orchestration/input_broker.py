@@ -1,7 +1,7 @@
 """One correlated RAM-only input; no transport objects or secret persistence."""
 import asyncio
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import re
 from uuid import uuid4
 
@@ -51,7 +51,7 @@ class InputBroker:
                 or request.prompt_id is None or reply_to != request.prompt_id
                 or sent_at.tzinfo is None or self.now() >= request.deadline
                 or sent_at < request.issued_at.replace(microsecond=0)
-                or sent_at > self.now().replace(microsecond=0) + __import__('datetime').timedelta(seconds=5)):
+                or sent_at > self.now().replace(microsecond=0) + timedelta(seconds=5)):
             return False
         try:
             normalized = normalize_credential(request.kind, value)

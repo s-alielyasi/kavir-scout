@@ -13,7 +13,6 @@ DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '012345678901
 
 @dataclass(frozen=True)
 class Config:
-    national_id: str = field(repr=False)
     poll_interval: float
     target_product: str
     target_size: str
@@ -23,6 +22,9 @@ class Config:
     max_retries: int
     timeout_ms: int
     gateway_hosts: tuple[str, ...]
+    debug_artifacts: bool = True
+    session_backup: bool = True
+    gateway_output: bool = True
     root: Path = ROOT
     store_url: str = STORE_URL
 
@@ -41,9 +43,6 @@ class Config:
         headless = e.get('HEADLESS', 'false').strip().lower()
         if headless not in ('true', 'false'):
             raise ValueError('HEADLESS must be true or false.')
-        national_id = e.get('NATIONAL_ID', '').strip().translate(DIGITS)
-        if national_id and not re.fullmatch(r'[0-9]{10}', national_id):
-            raise ValueError('NATIONAL_ID must contain exactly ten digits.')
         product = e.get('TARGET_PRODUCT', 'Perfect (R14) KB27').strip()
         size = e.get('TARGET_SIZE', '185/65R14').strip()
         if not product or not size:
@@ -56,15 +55,20 @@ class Config:
         profile = Path(e.get('USER_DATA_DIR', './data/browser_profile')).expanduser()
         if not profile.is_absolute():
             profile = ROOT / profile
-        return cls(national_id, interval, product, size, quantity, headless == 'true',
+        return cls(interval, product, size, quantity, headless == 'true',
                    profile.resolve(), retries, timeout, hosts)
 
 
 def load_config() -> Config:
     """Load the project's .env; explicitly exported environment values win."""
-    from dotenv import load_dotenv
-    load_dotenv(ROOT / '.env', override=False)
-    return Config.from_env()
+    return Config.from_env(settings_environment())
+
+
+def settings_environment() -> dict[str, str]:
+    from dotenv import dotenv_values
+    file_values = {k: v for k, v in dotenv_values(ROOT / '.env').items()
+                   if k != 'NATIONAL_ID' and v is not None}
+    return file_values | dict(os.environ)
 
 
 def boolean(e: Mapping[str, str], key: str, default: str) -> bool:
@@ -123,12 +127,13 @@ class BotSettings:
         if boolean(e, 'DEBUG_ARTIFACTS_ENABLED', 'false'):
             raise ValueError('Bot authentication/profile artifacts must remain disabled.')
         # The bot never consumes a legacy national-ID environment setting.
-        retailer = Config.from_env({k: v for k, v in e.items() if k != 'NATIONAL_ID'})
+        retailer = replace(Config.from_env({k: v for k, v in e.items() if k != 'NATIONAL_ID'}),
+                           debug_artifacts=False, session_backup=False, gateway_output=False)
         return cls(token, *ids, retailer, dry_run, schedule,
                    boolean(e, 'DELETE_SENSITIVE_MESSAGES', 'true'), *durations, approved)
 
 
 def load_bot_settings() -> BotSettings:
-    from dotenv import load_dotenv
-    load_dotenv(ROOT / '.env', override=False)
-    return BotSettings.from_env()
+    # Unlike CLI compatibility loading, do not copy legacy identity settings
+    # into process-global os.environ. Exported values still take precedence.
+    return BotSettings.from_env(settings_environment())

@@ -15,20 +15,20 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(c.headless)
         self.assertEqual(c.target_product, 'Perfect (R14) KB27')
         self.assertEqual(c.target_size, '185/65R14')
-        self.assertEqual(c.national_id, '')
+        self.assertFalse(hasattr(c, 'national_id'))
 
     def test_invalid_config(self):
         for values in ({'POLL_INTERVAL': '0'}, {'POLL_INTERVAL': 'nan'},
                        {'POLL_INTERVAL': 'inf'}, {'TARGET_QUANTITY': '0'},
                        {'TARGET_QUANTITY': 'four'}, {'HEADLESS': 'maybe'},
-                       {'NATIONAL_ID': '123'}, {'TARGET_SIZE': ''},
+                       {'TARGET_SIZE': ''},
                        {'MAX_RETRIES': '0'}, {'GATEWAY_HOSTS': '*'}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 Config.from_env(values)
 
     def test_national_id_and_relative_paths(self):
         c = Config.from_env({'NATIONAL_ID': '۰۰۱۲۳۴۵۶۷۸', 'USER_DATA_DIR': './custom'})
-        self.assertEqual(c.national_id, '0012345678')
+        self.assertFalse(hasattr(c, 'national_id'))
         self.assertTrue(c.user_data_dir.is_absolute())
         self.assertEqual(c.user_data_dir.name, 'custom')
 

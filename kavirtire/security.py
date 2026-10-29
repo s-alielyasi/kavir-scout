@@ -1,5 +1,6 @@
 """Secret redaction, payment origin checks and OS-held instance locks."""
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 import re
 from types import TracebackType
@@ -48,6 +49,15 @@ class SecretFilter(logging.Filter):
         record.msg = self.redact(record.getMessage())
         record.args = ()
         return True
+
+    @contextmanager
+    def register(self, value: str):
+        self.secrets.append(value)
+        try:
+            yield
+        finally:
+            # Remove just this registration; no historical OTP retention.
+            self.secrets.remove(value)
 
 
 class InstanceLock:

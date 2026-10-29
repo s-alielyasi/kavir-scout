@@ -61,3 +61,11 @@ def get_poll_interval(now_tehran: datetime) -> int | None:
 class TehranClock:
     def now(self) -> datetime:
         return datetime.now(TEHRAN)
+
+    def monotonic(self) -> float:
+        import asyncio
+        return asyncio.get_running_loop().time()
+
+    async def sleep(self, seconds: float) -> None:
+        import asyncio
+        await asyncio.sleep(seconds)

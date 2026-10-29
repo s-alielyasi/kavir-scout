@@ -29,3 +29,21 @@ class AttemptTests(unittest.TestCase):
             path.write_text('{broken')
             self.assertTrue(OrderAttemptStore(path).blocked())
 
+
+class EntryBarrierTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cli_cannot_bypass_an_unresolved_telegram_attempt(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        from config import Config
+        from kavirtire.errors import SafetyError
+        from kavirtire.security import SecretFilter
+        from kavirtire.workflow import run
+        with tempfile.TemporaryDirectory() as directory:
+            config = replace(Config.from_env({}), root=Path(directory))
+            store = OrderAttemptStore(config.root / 'data/order_attempt.json')
+            store.begin('a' * 32, date(2026, 10, 29))
+            with patch('kavirtire.workflow.persistent_browser') as browser:
+                with self.assertRaises(SafetyError):
+                    await run(config, SecretFilter())
+                browser.assert_not_called()
+

@@ -19,11 +19,11 @@ def main() -> int:
         print('Invalid configuration or missing dependencies. Check .env and requirements.txt.', file=sys.stderr)
         return 2
     if args.check_config:
-        print('Configuration valid. National ID and other secrets are not displayed.')
+        print('Configuration valid. No browser started; identity is requested at runtime.')
         return 0
     from kavirtire.diagnostics import LOG, setup_logging
     from kavirtire.security import InstanceLock, SecretFilter
-    secrets = SecretFilter([config.national_id])
+    secrets = SecretFilter()
     setup_logging(config.root, secrets)
     try:
         from kavirtire.workflow import run

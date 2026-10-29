@@ -1,5 +1,6 @@
 """One-way checkout with verified UI quantities; payment pages are never touched."""
 import asyncio
+import re
 from pathlib import Path
 from playwright.async_api import BrowserContext, Error, Locator, Page, TimeoutError
 from config import Config
@@ -10,13 +11,16 @@ from kavirtire.guard import HumanGuard
 from kavirtire.security import SecretFilter, gateway_url, merchant_url
 from kavirtire.shop import product_container
 from kavirtire.text import matches_product, normalize_text, parse_quantity, text_pattern
-from kavirtire.ui import button, field, has_text, settle, terminal, unique_visible
+from kavirtire.ui import button, field, has_text, settle, terminal, unique_visible, require_merchant
 
 
 class GatewayWatcher:
     """Observe URLs of all tabs/popups, without reading or interacting with a gateway DOM."""
-    def __init__(self, context: BrowserContext, hosts: tuple[str, ...]):
+    def __init__(self, context: BrowserContext, hosts: tuple[str, ...], owner: Page | None = None):
         self.context, self.hosts = context, hosts
+        self.owner = owner
+        self.baseline = set(context.pages)
+        self.armed = False
         self.changed = asyncio.Event()
         self.new_pages: set[Page] = set()
         context.on('page', self.attach)
@@ -40,8 +44,19 @@ class GatewayWatcher:
     async def find(self) -> Page | None:
         for page in self.context.pages:
             if not page.is_closed() and gateway_url(page.url, self.hosts):
+                if self.owner is not None:
+                    if not self.armed:
+                        raise SafetyError('A preexisting gateway blocks a new checkout. Inspect the existing order.')
+                    if page is not self.owner and (page in self.baseline or await page.opener() is not self.owner):
+                        raise SafetyError('Gateway is unrelated to the current checkout.')
                 return page
         return None
+
+    async def prepare(self) -> None:
+        if not self.armed:
+            await self.find()  # refuse an old gateway before the first side effect
+            self.baseline = set(self.context.pages)
+            self.armed = True
 
     async def wait(self, timeout_ms: int) -> Page | None:
         """Wait for navigation events, supporting redirects, tabs and window.open."""
@@ -63,7 +78,7 @@ class GatewayWatcher:
 class Checkout:
     def __init__(self, page: Page, config: Config, guard: HumanGuard, secrets: SecretFilter):
         self.page, self.config, self.guard, self.secrets = page, config, guard, secrets
-        self.watcher = GatewayWatcher(page.context, config.gateway_hosts)
+        self.watcher = GatewayWatcher(page.context, config.gateway_hosts, owner=page)
         self.attempted: set[str] = set()
         self.uncertain = False
         self.ui_changed = asyncio.Event()
@@ -92,6 +107,7 @@ class Checkout:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def quantity_control(self, scope: Locator) -> Locator | None:
+        require_merchant(scope)
         candidate = await field(scope, S.QUANTITY_LABELS, S.QUANTITY_CSS)
         if candidate and await candidate.evaluate(S.IS_QUANTITY_CONTROL_JS):
             return candidate
@@ -99,6 +115,7 @@ class Checkout:
 
     async def read_quantity(self, scope: Locator) -> int | None:
         """Read rendered form state, including Persian dropdown option labels."""
+        require_merchant(scope)
         control = await self.quantity_control(scope)
         if control:
             if await control.evaluate('(el) => el.tagName') == 'SELECT':
@@ -109,7 +126,6 @@ class Checkout:
         if display:
             return parse_quantity(await display.evaluate(S.QUANTITY_TEXT_JS) or '')
         # Text-only order summaries need a labelled, unambiguous quantity.
-        import re
         text = normalize_text(await scope.inner_text())
         values = re.findall(r'تعداد(?: حلقه| تایر)?\s*[:：]?\s*(\d+)\b', text)
         return int(values[0]) if len(values) == 1 else None
@@ -181,8 +197,15 @@ class Checkout:
 
     async def verify_order(self) -> Locator:
         """Re-read all three values and reject extra items before each cart submit."""
+        require_merchant(self.page)
         region = await unique_visible(self.page.locator(css) for css in S.ORDER_REGIONS)
         root = region if region is not None else self.page
+        # Inspect the entire actual order region, including previously unknown
+        # row markup. A combined summary must never mix two tire identifiers.
+        sizes = re.findall(S.TIRE_SIZE_PATTERN, normalize_text(await root.locator('body').inner_text()
+                           if region is None else await region.inner_text()), re.I)
+        if len(sizes) != 1:
+            raise SafetyError('SAFETY CHECK FAILED: order must contain exactly one unambiguous tire item.')
         scope = await product_container(root, S.ORDER_CONTAINERS, self.config)
         if scope is None and region is not None and await self.read_quantity(region) is not None:
             scope = region
@@ -196,7 +219,6 @@ class Checkout:
                 if not await row.is_visible():
                     continue
                 text = normalize_text(await row.inner_text())
-                import re
                 if re.search(S.TIRE_SIZE_PATTERN, text, re.I) and not matches_product(
                         text, self.config.target_product, self.config.target_size):
                     raise SafetyError('SAFETY CHECK FAILED: another tire appears in the order/cart.')
@@ -207,15 +229,17 @@ class Checkout:
     async def manual(self, message: str) -> None:
         """No automatic resubmission after an uncertain mutating click."""
         LOG.warning(message)
-        if merchant_url(self.page.url):
+        if self.config.debug_artifacts and merchant_url(self.page.url):
             await capture_debug(self.page, self.config.root, self.secrets, 'checkout')
-        await terminal('مرحله را در مرورگر بررسی/تکمیل کنید؛ سفارش تازه نسازید. سپس Enter بزنید: ')
+        await self.guard.interactions.request_manual_action('checkout_reconciliation')
 
     async def capture_gateway(self, page: Page) -> str:
         """Persist just the latest URL; do not read, fill or click payment content."""
         url = page.url
         if not gateway_url(url, self.config.gateway_hosts):
             raise SafetyError('Unrecognized payment host.')
+        if not self.config.gateway_output:
+            return url
         (self.config.root / 'payment_url.txt').write_text(url + '\n', encoding='utf-8')
         LOG.info('Payment URL captured. Saved to payment_url.txt')
         # Gateway tokens deliberately do not enter the log file.
@@ -260,17 +284,21 @@ class Checkout:
                 await self.manual('Complete required address/delivery or other human decisions in the browser.')
                 continue
             await self.verify_order()
-            text = normalize_text(await action.inner_text())
+            text = normalize_text(re.sub(r'[\ue000-\uf8ff]', '',
+                                  await action.get_attribute('aria-label') or await action.inner_text()))
             snapshot = await self.page.locator('body').inner_text()
             # Body text, query strings and toast messages can change after a
             # failed submit. They must never re-arm an identical order action.
-            signature = S.ACTION_PHASES.get(text, text)
+            signature = S.ACTION_PHASES.get(text)
+            if signature is None:
+                raise SafetyError('Checkout action phase is not recognized.')
             if signature in self.attempted:
                 await self.manual('This checkout action was already attempted. No automatic repeat is permitted.')
                 continue
             self.attempted.add(signature)  # mark BEFORE the side effect
             LOG.info('Continuing checkout: %s. Waiting for order/gateway transition.', text)
             try:
+                await self.watcher.prepare()
                 await self.arm_transition(snapshot)
                 await action.click()
                 await self.watcher.wait_pending_navigation(self.config.timeout_ms)

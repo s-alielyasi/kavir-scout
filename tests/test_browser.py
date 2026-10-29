@@ -34,12 +34,13 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         self.page = await self.context.new_page()
         self.page.set_default_timeout(1000)
         self.tmp = tempfile.TemporaryDirectory()
-        self.config = replace(Config.from_env({}), root=Path(self.tmp.name), timeout_ms=1000)
+        self.config = replace(Config.from_env({}), root=Path(self.tmp.name),
+                              user_data_dir=Path(self.tmp.name) / 'profile', timeout_ms=1000)
         self.guard = HumanGuard(self.page)
         self.secrets = SecretFilter()
         self.shop = Shop(self.page, self.config, self.guard)
         self.checkout = Checkout(self.page, self.config, self.guard, self.secrets)
-        self.input_patch = patch('kavirtire.checkout.terminal', new=AsyncMock(
+        self.input_patch = patch.object(self.guard.interactions, 'request_manual_action', new=AsyncMock(
             side_effect=AssertionError('Unexpected manual input in fixture')))
         self.input_patch.start()
 
@@ -244,7 +245,8 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         async def fixture_context(config):
             yield self.context, self.page
 
-        with patch('kavirtire.workflow.persistent_browser', fixture_context), \
+        with patch('kavirtire.interactions.TerminalInteraction.request_manual_action', new=AsyncMock()), \
+             patch('kavirtire.workflow.persistent_browser', fixture_context), \
              patch('kavirtire.workflow.terminal', new=AsyncMock(return_value='')):
             await run(self.config, self.secrets)
         self.assertEqual((self.config.root / 'payment_url.txt').read_text().strip(),
@@ -255,13 +257,13 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         config = replace(self.config, headless=True, user_data_dir=self.config.root / 'profile')
         async with persistent_browser(config) as (context, page):
             await context.add_cookies([{'name': 'fixture', 'value': 'saved', 'url': 'https://kavirtire.ir'}])
-        self.assertTrue((config.root / 'data/storage_state.json').is_file())
+        self.assertTrue((config.user_data_dir / '.kavir-session.json').is_file())
         async with persistent_browser(config) as (context, page):
             cookies = await context.cookies('https://kavirtire.ir')
             self.assertIn('fixture', [item['name'] for item in cookies])
 
     async def test_login_national_id_and_terminal_otp(self):
-        config = replace(self.config, national_id='0012345678')
+        config = self.config
         login = Login(self.page, config, self.guard, self.secrets)
         # A local fixture, not the site's SMS endpoint.
         await self.page.set_content('''<label>کد ملی<input name="n_code"></label>
@@ -269,10 +271,10 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         otp_form = '''<label>کد تایید<input autocomplete="one-time-code"></label>
             <button onclick="document.body.innerHTML='<a>خروج از حساب</a><button>خرید</button>'">تایید</button>'''
         await self.page.evaluate('(html) => window.otpForm=html', otp_form)
-        with patch('kavirtire.login.terminal', new=AsyncMock(return_value='12345')):
-            await login.ensure()
+        with patch.object(login.interactions, 'request_otp', new=AsyncMock(return_value='12345')):
+            await login.ensure('0012345678')
         self.assertTrue(await login.is_logged_in())
-        self.assertTrue((config.root / 'data/storage_state.json').exists())
+        self.assertTrue((config.user_data_dir / '.kavir-session.json').exists())
 
     async def test_monitor_stops_on_session_expiration(self):
         from kavirtire.errors import SessionExpired
@@ -302,7 +304,7 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
             await self.page.locator('p').evaluate('(el) => el.remove()')
             return ''
 
-        with patch('kavirtire.guard.terminal', side_effect=human_completes):
+        with patch.object(self.guard.interactions, 'request_manual_action', side_effect=human_completes):
             await self.shop.refresh_inventory()
         self.assertTrue(await self.page.evaluate('window.refreshed'))
 

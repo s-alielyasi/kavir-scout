@@ -5,16 +5,21 @@ from pathlib import Path
 import re
 from playwright.async_api import Page, Error
 from kavirtire import selectors as S
-from kavirtire.security import SecretFilter, safe_url
+from kavirtire.security import SecretFilter, safe_url, merchant_url
 
 LOG = logging.getLogger('kavir')
 
 
-def setup_logging(root: Path, secrets: SecretFilter) -> None:
+def setup_logging(root: Path, secrets: SecretFilter, *, tehran: bool = False) -> None:
     (root / 'logs').mkdir(parents=True, exist_ok=True)
     LOG.setLevel(logging.INFO)
     LOG.handlers.clear()
-    formatter = logging.Formatter('[%(asctime)s] %(message)s', '%H:%M:%S')
+    class TehranFormatter(logging.Formatter):
+        def formatTime(self, record, datefmt=None):
+            from kavirtire.orchestration.scheduling import TEHRAN
+            return datetime.fromtimestamp(record.created, TEHRAN).strftime('%Y-%m-%d %H:%M:%S %Z')
+    formatter = (TehranFormatter('[%(asctime)s] %(message)s') if tehran else
+                 logging.Formatter('[%(asctime)s] %(message)s', '%H:%M:%S'))
     for handler in (logging.StreamHandler(), logging.FileHandler(
             root / 'logs/kavirtire.log', encoding='utf-8')):
         handler.setFormatter(formatter)
@@ -29,7 +34,7 @@ async def capture_debug(page: Page, root: Path, secrets: SecretFilter,
     Artifacts can still contain names/addresses. Keep them local and inspect
     before sharing. Never call on a gateway page.
     """
-    if page.is_closed():
+    if page.is_closed() or (page.url != 'about:blank' and not merchant_url(page.url)):
         return
     folder = root / 'debug'
     folder.mkdir(parents=True, exist_ok=True)

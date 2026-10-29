@@ -1,0 +1,15 @@
+# Tested constraints, 2026-10-29. Use with: pip install -r requirements.txt -c requirements-tested.txt
+# Python 3.11+; local verification used 3.12.3. Refresh and test together.
+playwright==1.64.1
+python-dotenv==1.2.4
+python-telegram-bot==22.8
+tzdata==2026.6
+pyee==13.0.1
+greenlet==3.5.6
+typing-extensions==4.16.0
+httpx==0.28.1
+httpcore==1.0.9
+anyio==4.15.1
+idna==3.20
+certifi==2026.10.23
+h11==0.16.0

@@ -4,10 +4,17 @@ import re
 import threading
 from collections.abc import Iterable
 from playwright.async_api import Locator, Page, expect
-from kavirtire.errors import AmbiguousElement
+from kavirtire.errors import AmbiguousElement, SafetyError
 from kavirtire.text import text_pattern
 
 Scope = Page | Locator
+
+
+def require_merchant(scope: Scope) -> None:
+    from kavirtire.security import merchant_url
+    page = scope.page if isinstance(scope, Locator) else scope
+    if page.url != 'about:blank' and not merchant_url(page.url):
+        raise SafetyError('Merchant DOM operation refused on an external page.')
 
 
 async def unique_visible(candidates: Iterable[Locator]) -> Locator | None:
@@ -26,6 +33,7 @@ async def unique_visible(candidates: Iterable[Locator]) -> Locator | None:
 
 
 async def button(scope: Scope, texts: tuple[str, ...]) -> Locator | None:
+    require_merchant(scope)
     return await unique_visible(scope.get_by_role(role, name=re.compile(
                                     r'^[\s\u200c\u200d\ue000-\uf8ff]*' + text_pattern(text).pattern
                                     + r'[\s\u200c\u200d\ue000-\uf8ff]*$', re.I))
@@ -33,6 +41,7 @@ async def button(scope: Scope, texts: tuple[str, ...]) -> Locator | None:
 
 
 async def field(scope: Scope, labels: tuple[str, ...], css: tuple[str, ...]) -> Locator | None:
+    require_merchant(scope)
     groups = [scope.get_by_label(text_pattern(label)) for label in labels]
     groups += [scope.get_by_placeholder(text_pattern(label)) for label in labels]
     groups += [scope.locator(selector) for selector in css]
@@ -40,6 +49,7 @@ async def field(scope: Scope, labels: tuple[str, ...], css: tuple[str, ...]) -> 
 
 
 async def has_text(scope: Scope, texts: tuple[str, ...]) -> bool:
+    require_merchant(scope)
     for text in texts:
         loc = scope.get_by_text(text_pattern(text))
         for i in range(await loc.count()):
@@ -84,5 +94,6 @@ async def settle(page: Page) -> None:
 
 
 async def wait_loading(page: Page, timeout_ms: int) -> None:
+    require_merchant(page)
     from kavirtire import selectors as S
     await expect(page.locator(S.LOADING)).to_have_count(0, timeout=timeout_ms)
