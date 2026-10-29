@@ -34,8 +34,11 @@ class BotRuntime:
 
 def build_application(settings, *, service_factory=None, clock=None) -> BotRuntime:
     quiet_framework_logs()
-    app = (Application.builder().token(settings.token).concurrent_updates(False)
-           .job_queue(None).persistence(None).connect_timeout(10).read_timeout(10).write_timeout(10).build())
+    builder = (Application.builder().token(settings.token).concurrent_updates(False)
+               .job_queue(None).persistence(None).connect_timeout(10).read_timeout(10).write_timeout(10))
+    if settings.proxy_url:
+        builder = builder.proxy(settings.proxy_url).get_updates_proxy(settings.proxy_url)
+    app = builder.build()
     if service_factory is None:
         # Only this composition root knows the browser adapter. Handlers and
         # Telegram transport modules never access Page, Locator or Playwright.

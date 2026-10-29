@@ -1,5 +1,5 @@
 # Tested constraints, 2026-10-29. Use with: pip install -r requirements.txt -c requirements-tested.txt
-# Python 3.11+; local verification used 3.12.3. Refresh and test together.
+# Python 3.11+; local verification used 3.12.3 and 3.12.16. Refresh and test together.
 playwright==1.64.1
 python-dotenv==1.2.4
 python-telegram-bot==22.8

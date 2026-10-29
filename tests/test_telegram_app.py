@@ -2,7 +2,8 @@ import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+import httpx
 
 from config import BotSettings
 from telegram_bot.app import build_application, serve
@@ -25,6 +26,18 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
         factory.assert_not_called()
         # Construction allocates both HTTP clients, without initializing a bot.
         await asyncio.gather(*(request.shutdown() for request in runtime.application.bot._request))
+
+    async def test_explicit_proxy_reaches_both_telegram_http_clients(self):
+        settings = replace(self.settings(), proxy_url='http://127.0.0.1:8889')
+        with patch('httpx.AsyncClient', wraps=httpx.AsyncClient) as clients:
+            runtime = build_application(settings, service_factory=AsyncMock())
+        try:
+            self.assertEqual(clients.call_count, 2)
+            for call in clients.call_args_list:
+                self.assertEqual(call.kwargs['proxy'], settings.proxy_url)
+            self.assertFalse(runtime.controller.active)
+        finally:
+            await asyncio.gather(*(request.shutdown() for request in runtime.application.bot._request))
 
     async def test_lifecycle_stops_polling_then_worker_then_application(self):
         calls = []

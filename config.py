@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 from typing import Mapping
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
 STORE_URL = 'https://kavirtire.ir/esale'
@@ -27,6 +28,7 @@ class Config:
     gateway_output: bool = True
     root: Path = ROOT
     store_url: str = STORE_URL
+    browser_channel: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> 'Config':
@@ -35,7 +37,7 @@ class Config:
         interval = float(e.get('POLL_INTERVAL', '5'))
         if not math.isfinite(interval) or interval <= 0:
             raise ValueError('POLL_INTERVAL must be a finite positive number.')
-        quantity = int(e.get('TARGET_QUANTITY', '4'))
+        quantity = int(e.get('TARGET_QUANTITY', '2'))
         retries = int(e.get('MAX_RETRIES', '3'))
         timeout = int(e.get('TIMEOUT_MS', '15000'))
         if quantity < 1 or retries < 1 or timeout < 1000:
@@ -43,6 +45,9 @@ class Config:
         headless = e.get('HEADLESS', 'false').strip().lower()
         if headless not in ('true', 'false'):
             raise ValueError('HEADLESS must be true or false.')
+        channel = e.get('BROWSER_CHANNEL', '').strip().lower()
+        if channel not in ('', 'chrome'):
+            raise ValueError('BROWSER_CHANNEL must be empty or chrome.')
         product = e.get('TARGET_PRODUCT', 'Perfect (R14) KB27').strip()
         size = e.get('TARGET_SIZE', '185/65R14').strip()
         if not product or not size:
@@ -56,7 +61,7 @@ class Config:
         if not profile.is_absolute():
             profile = ROOT / profile
         return cls(interval, product, size, quantity, headless == 'true',
-                   profile.resolve(), retries, timeout, hosts)
+                   profile.resolve(), retries, timeout, hosts, browser_channel=channel or None)
 
 
 def load_config() -> Config:
@@ -91,6 +96,7 @@ class BotSettings:
     checkout_timeout: int = 180
     handoff_ttl: int = 180
     live_checkout_approved: bool = False
+    proxy_url: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> 'BotSettings':
@@ -126,11 +132,23 @@ class BotSettings:
             raise ValueError('Live checkout requires completion of the documented release gates.')
         if boolean(e, 'DEBUG_ARTIFACTS_ENABLED', 'false'):
             raise ValueError('Bot authentication/profile artifacts must remain disabled.')
+        proxy = e.get('TELEGRAM_PROXY_URL', '').strip()
+        if proxy:
+            try:
+                parsed = urlsplit(proxy)
+                if (parsed.scheme not in ('http', 'https') or not parsed.hostname
+                        or parsed.path not in ('', '/') or parsed.query or parsed.fragment
+                        or any(c.isspace() for c in proxy)):
+                    raise ValueError
+                parsed.port  # Reject malformed/out-of-range ports without exposing the URL.
+            except ValueError:
+                raise ValueError('TELEGRAM_PROXY_URL must be an HTTP(S) proxy URL.') from None
         # The bot never consumes a legacy national-ID environment setting.
         retailer = replace(Config.from_env({k: v for k, v in e.items() if k != 'NATIONAL_ID'}),
                            debug_artifacts=False, session_backup=False, gateway_output=False)
         return cls(token, *ids, retailer, dry_run, schedule,
-                   boolean(e, 'DELETE_SENSITIVE_MESSAGES', 'true'), *durations, approved)
+                   boolean(e, 'DELETE_SENSITIVE_MESSAGES', 'true'), *durations, approved,
+                   proxy_url=proxy or None)
 
 
 def load_bot_settings() -> BotSettings:

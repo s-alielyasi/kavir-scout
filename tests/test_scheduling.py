@@ -30,8 +30,12 @@ class ScheduleTests(unittest.TestCase):
                'TELEGRAM_ALLOWED_USER_ID': '123', 'TELEGRAM_ALLOWED_CHAT_ID': '123'}
         settings = BotSettings.from_env(env)
         self.assertTrue(settings.dry_run)
-        self.assertEqual(settings.retailer.target_quantity, 4)
+        self.assertEqual(settings.retailer.target_quantity, 2)
         self.assertNotIn(env['TELEGRAM_BOT_TOKEN'], repr(settings))
+        proxy = 'http://fixture-user:fixture-password@127.0.0.1:8889'
+        proxied = BotSettings.from_env(env | {'TELEGRAM_PROXY_URL': proxy})
+        self.assertEqual(proxied.proxy_url, proxy)
+        self.assertNotIn(proxy, repr(proxied))
         for override in ({'DRY_RUN': 'maybe'}, {'TELEGRAM_ALLOWED_USER_ID': ''},
                          {'TELEGRAM_ALLOWED_CHAT_ID': '-123'}, {'TELEGRAM_BOT_TOKEN': ''},
                          {'SALE_TIMEZONE': 'UTC'}, {'POLL_WINDOW_1_END': '08:20:00'},
@@ -39,4 +43,8 @@ class ScheduleTests(unittest.TestCase):
                          {'DRY_RUN': 'false'}, {'DEBUG_ARTIFACTS_ENABLED': 'true'}):
             with self.subTest(override=tuple(override)), self.assertRaises(ValueError):
                 BotSettings.from_env(env | override)
+        for proxy in ('socks5://localhost:1080', 'http://', 'http://localhost:99999',
+                      'http://localhost:8889/path', 'http://localhost:8889?secret=fixture'):
+            with self.subTest(proxy=proxy), self.assertRaises(ValueError):
+                BotSettings.from_env(env | {'TELEGRAM_PROXY_URL': proxy})
 

@@ -23,7 +23,8 @@ class TelegramInteractions:
         if kind == 'manual':
             text += '\nبرای ادامه به همین پیام /resume پاسخ دهید یا بنویسید:\n/resume ' + request.request_id
         try:
-            message = await self.notifications.send(text, reply_markup=ForceReply(selective=True))
+            message = await self.notifications.send(text,
+                protect_content=kind in ('national_id', 'otp'), reply_markup=ForceReply(selective=True))
             broker.bind_prompt(request.request_id, message.message_id)
             message = None
             return await broker.wait(request.request_id)

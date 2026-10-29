@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 from telegram import Update
 from config import BotSettings
 from kavirtire.orchestration.input_broker import InputBroker
-from kavirtire.orchestration.models import AuthorizedOwner, Receipt
+from kavirtire.orchestration.models import AuthorizedOwner, Receipt, StatusSnapshot, WorkflowState
 from telegram_bot.authorization import authorized
 from telegram_bot.handlers import Handlers
 from telegram_bot.interactions import TelegramInteractions
@@ -65,6 +65,34 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
         await self.handlers.arm(update('/arm'), SimpleNamespace(args=[]))
         await self.handlers.arm(update('/arm'), SimpleNamespace(args=[]))
         self.controller.arm.assert_awaited_once()
+
+    async def test_start_status_and_events_are_copyable(self):
+        self.controller.status = lambda: StatusSnapshot(
+            state=WorkflowState.IDLE, now=NOW, run_id=None, sale_date=None, dry_run=True,
+            product=self.settings.retailer.target_product, size=self.settings.retailer.target_size,
+            quantity=4, interval=None, checkpoint_id=None, outcome=None, last_stock=None, last_check=None)
+        for i, (command, handler) in enumerate((('/start', self.handlers.start),
+                                                ('/status', self.handlers.status)), 1):
+            await handler(update(command, update_id=i), None)
+            kwargs = self.bot.send_message.await_args.kwargs
+            self.assertFalse(kwargs['protect_content'])
+            self.assertEqual(kwargs['chat_id'], OWNER.chat_id)
+            self.assertTrue(kwargs['link_preview_options'].is_disabled)
+        await TelegramNotifications(self.bot, self.settings).publish('sale_window_ended')
+        self.assertFalse(self.bot.send_message.await_args.kwargs['protect_content'])
+
+    async def test_login_prompts_remain_protected(self):
+        port = TelegramInteractions(self.bot, self.controller)
+        for request in (port.request_national_id, port.request_otp):
+            task = asyncio.create_task(request())
+            try:
+                await asyncio.sleep(0)
+                self.assertTrue(self.bot.send_message.await_args.kwargs['protect_content'])
+                self.assertIsNotNone(self.controller.broker.pending)
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            self.assertIsNone(self.controller.broker.pending)
 
     async def test_credentials_need_reply_and_delete_failure_is_nonfatal(self):
         request = self.controller.broker.open('otp', 'a'*32, datetime.now(timezone.utc)+timedelta(seconds=30))

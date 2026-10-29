@@ -28,10 +28,10 @@ class TelegramNotifications:
     def __init__(self, bot, settings):
         self.bot, self.settings = bot, settings
 
-    async def send(self, text: str, **kwargs):
+    async def send(self, text: str, *, protect_content: bool = False, **kwargs):
         try:
             return await self.bot.send_message(chat_id=self.settings.allowed_chat_id, text=text,
-                protect_content=True, link_preview_options=LinkPreviewOptions(is_disabled=True), **kwargs)
+                protect_content=protect_content, link_preview_options=LinkPreviewOptions(is_disabled=True), **kwargs)
         except RetryAfter as error:
             raise DeliveryFailure(error.retry_after) from None
         except TelegramError:
@@ -45,4 +45,4 @@ class TelegramNotifications:
             raise ValueError('Unrecognized payment origin.')
         markup = InlineKeyboardMarkup([[InlineKeyboardButton('💳 پرداخت سفارش', url=url)]])
         await self.send('درگاه سفارش آماده است. پرداخت را شخصاً انجام دهید. ممکن است لینک فقط در مرورگر اصلی کار کند.',
-                        reply_markup=markup)
+                        protect_content=True, reply_markup=markup)

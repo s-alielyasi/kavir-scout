@@ -11,8 +11,10 @@ from kavirtire.security import SecretFilter, gateway_url, InstanceLock
 class CoreTests(unittest.TestCase):
     def test_defaults(self):
         c = Config.from_env({})
-        self.assertEqual((c.poll_interval, c.target_quantity), (5, 4))
+        self.assertEqual((c.poll_interval, c.target_quantity), (5, 2))
         self.assertFalse(c.headless)
+        self.assertIsNone(c.browser_channel)
+        self.assertEqual(Config.from_env({'BROWSER_CHANNEL': 'chrome'}).browser_channel, 'chrome')
         self.assertEqual(c.target_product, 'Perfect (R14) KB27')
         self.assertEqual(c.target_size, '185/65R14')
         self.assertFalse(hasattr(c, 'national_id'))
@@ -21,6 +23,7 @@ class CoreTests(unittest.TestCase):
         for values in ({'POLL_INTERVAL': '0'}, {'POLL_INTERVAL': 'nan'},
                        {'POLL_INTERVAL': 'inf'}, {'TARGET_QUANTITY': '0'},
                        {'TARGET_QUANTITY': 'four'}, {'HEADLESS': 'maybe'},
+                       {'BROWSER_CHANNEL': 'unknown'},
                        {'TARGET_SIZE': ''},
                        {'MAX_RETRIES': '0'}, {'GATEWAY_HOSTS': '*'}):
             with self.subTest(values=values), self.assertRaises(ValueError):

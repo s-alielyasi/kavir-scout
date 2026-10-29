@@ -6,7 +6,6 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from playwright.async_api import async_playwright
-from config import Config
 from kavirtire.errors import AmbiguousElement, BotError, QuantityLimit, SafetyError
 from kavirtire.guard import HumanGuard
 from kavirtire.security import SecretFilter
@@ -15,26 +14,19 @@ from kavirtire.checkout import Checkout, GatewayWatcher
 from kavirtire.login import Login
 from kavirtire.workflow import enforce_published_limit
 from kavirtire.ui import button
-
-PRODUCT = 'Perfect (R14) KB27'
-SIZE = '185/65R14'
-
-
-def row(size=SIZE, quantity='4', maximum='4'):
-    return (f'<article>{PRODUCT} <span>{size}</span>'
-            f'<label>تعداد<input type="number" value="{quantity}" max="{maximum}"></label>'
-            '<button>انتخاب</button></article>')
+from tests.browser_support import PRODUCT, SIZE, fixture_config, offline_context, row
 
 
 class BrowserTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=True)
-        self.context = await self.browser.new_context()
+        base = fixture_config()
+        self.browser = await self.playwright.chromium.launch(headless=True, channel=base.browser_channel)
+        self.context = await offline_context(self.browser)
         self.page = await self.context.new_page()
         self.page.set_default_timeout(1000)
         self.tmp = tempfile.TemporaryDirectory()
-        self.config = replace(Config.from_env({}), root=Path(self.tmp.name),
+        self.config = replace(base, root=Path(self.tmp.name),
                               user_data_dir=Path(self.tmp.name) / 'profile', timeout_ms=1000)
         self.guard = HumanGuard(self.page)
         self.secrets = SecretFilter()

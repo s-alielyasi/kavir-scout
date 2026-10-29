@@ -7,13 +7,12 @@ import unittest
 from unittest.mock import AsyncMock, patch
 from playwright.async_api import async_playwright
 
-from config import Config
 from kavirtire.checkout import Checkout
 from kavirtire.errors import AmbiguousElement, SafetyError
 from kavirtire.guard import HumanGuard
 from kavirtire.security import SecretFilter
 from kavirtire.shop import Shop
-from tests.test_browser import row, PRODUCT, SIZE
+from tests.browser_support import row, PRODUCT, SIZE, fixture_config, offline_context
 from contextlib import asynccontextmanager
 from datetime import timezone
 from types import SimpleNamespace
@@ -31,11 +30,12 @@ from telegram_bot.notifications import TelegramNotifications
 class SafetyTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.pw = await async_playwright().start()
-        self.browser = await self.pw.chromium.launch(headless=True)
-        self.context = await self.browser.new_context()
+        base = fixture_config()
+        self.browser = await self.pw.chromium.launch(headless=True, channel=base.browser_channel)
+        self.context = await offline_context(self.browser)
         self.page = await self.context.new_page()
         self.tmp = tempfile.TemporaryDirectory()
-        self.config = replace(Config.from_env({}), root=Path(self.tmp.name),
+        self.config = replace(base, root=Path(self.tmp.name),
                               user_data_dir=Path(self.tmp.name) / 'profile', timeout_ms=1000)
         self.page.set_default_timeout(1000)
         self.guard = HumanGuard(self.page)
