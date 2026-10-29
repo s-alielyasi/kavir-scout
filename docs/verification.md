@@ -347,3 +347,28 @@ permanent tests; the prior full 103-test result is separate and the full suite w
 not rerun for this routing change. Config and whitespace checks passed. Mobile
 message entry uses the same authorized account/chat; Telegram Desktop need not
 run, but the Linux bot's local Telegram proxy service must stay reachable.
+
+## Successful live inventory check and headless preference — 2026-10-29
+
+The supervised Telegram test subsequently succeeded with the direct store
+browser: sanitized logs recorded identity submission at 22:23:37 Tehran, successful
+login and shop navigation at 22:24:19, inventory refresh and then
+`inventory_test_out_of_stock` at 22:24:29. The owner confirmed that the unavailable
+result ended the test and closed the browser. No order marker was created.
+These observations validate one headed login/inventory test, not a complete
+scheduled morning session or checkout.
+
+At the owner's request, changed only `HEADLESS` to `true` in private `.env`;
+all other parsed settings and owner-only file permissions were preserved. The
+code's generic default remains headed for manual-browser compatibility. Headless
+manual prompts now explain when a visible retry is needed; account confirmation
+and protection checks have not been removed or automated.
+
+Added a fake-clock regression that starts the daily run before 08:00, keeps
+returning out-of-stock or target-absent, verifies repeated refreshes across all
+three cadence windows and stops only at the 08:15 cutoff. Neither outcome calls
+checkout or creates an attempt marker. **39 focused orchestration, handler and
+core tests passed**; config and Git whitespace checks passed. There are now 106
+permanent tests; this is separate from the earlier complete 103-test run. No new
+live login/SMS was triggered for the headless configuration change. Real headless
+store login and the complete morning session remain unverified.

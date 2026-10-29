@@ -41,4 +41,7 @@ class TelegramInteractions:
             'کد فعلی پیامک را با حفظ بزرگی حروف در پاسخ به همین پیام بفرستید. کد قبلی یا پاسخ به پیام دیگر پذیرفته نمی‌شود.')
 
     async def request_manual_action(self, reason: str) -> None:
-        await self._request('manual', MANUAL.get(reason, 'مرحله جاری را در مرورگر بررسی/تکمیل کنید؛ از ثبت سفارش تازه خودداری کنید.'))
+        text = MANUAL.get(reason, 'مرحله جاری را در مرورگر بررسی/تکمیل کنید؛ از ثبت سفارش تازه خودداری کنید.')
+        if self.controller.settings.retailer.headless:
+            text += '\nمرورگر این اجرا مخفی است. اگر این مرحله به دیدن صفحه نیاز دارد، /cancel بفرستید و برای ادامه حالت مرورگر نمایان را درخواست کنید.'
+        await self._request('manual', text)

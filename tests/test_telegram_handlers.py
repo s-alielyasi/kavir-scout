@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -101,6 +102,20 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
             self.assertIsNone(self.controller.broker.pending)
+
+    async def test_headless_manual_checkpoint_explains_visible_browser_requirement(self):
+        self.controller.settings = replace(self.settings,
+            retailer=replace(self.settings.retailer, headless=True))
+        task = asyncio.create_task(TelegramInteractions(self.bot, self.controller).request_manual_action('site_protection'))
+        try:
+            await asyncio.sleep(0)
+            text = self.bot.send_message.await_args.kwargs['text']
+            self.assertIn('مرورگر این اجرا مخفی است', text)
+            self.assertIn('/cancel', text)
+            self.assertEqual(self.controller.broker.pending.kind, 'manual')
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     async def test_credentials_need_reply_and_delete_failure_is_nonfatal(self):
         request = self.controller.broker.open('otp', 'a'*32, datetime.now(timezone.utc)+timedelta(seconds=30))

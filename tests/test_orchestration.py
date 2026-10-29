@@ -210,6 +210,30 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.observed[0][0].hour, 8)
         self.assertEqual(self.observed[0][0].minute, 0)
 
+    async def test_daily_run_keeps_observing_unavailable_targets_until_cutoff(self):
+        for stock in ('out_of_stock', 'target_absent'):
+            self.clock.current = self.clock.current.replace(hour=7, minute=59, second=59)
+            self.clock.elapsed = 0
+            checks = []
+            async def observe(refresh=False):
+                checks.append((self.clock.now(), refresh))
+                return stock
+            self.service.observe.side_effect = observe
+            await self.controller.arm(self.owner)
+            await self.settle()
+            self.assertGreater(len(checks), 2)
+            self.assertEqual(checks[0][0].strftime('%H:%M:%S'), '08:00:00')
+            self.assertFalse(checks[0][1])
+            self.assertTrue(all(refresh for _,refresh in checks[1:]))
+            self.assertTrue(all(now < self.settings.schedule.cutoff(now.date()) for now,_ in checks))
+            for (previous,_),(now,_) in zip(checks,checks[1:]):
+                interval = self.settings.schedule.decide(now, now.date()).interval
+                self.assertGreaterEqual((now-previous).total_seconds(), interval)
+            self.assertEqual(self.controller.outcome, 'sale_window_ended')
+            self.assertEqual(self.controller.last_stock, stock)
+            self.service.checkout.assert_not_awaited()
+            self.assertFalse(self.controller.attempts.blocked())
+
     async def test_clock_rollback_fails_without_order(self):
         async def backwards(refresh=False):
             self.clock.current -= timedelta(minutes=1)

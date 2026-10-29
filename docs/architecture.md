@@ -142,8 +142,13 @@ durable order recovery. Fixtures do not establish current live selector validity
 
 The following is historical evidence from supervised/public CLI inspections on
 2026-10-27, not a fresh inspection of the store. Selectors live in
-`kavirtire/selectors.py`; the current Telegram workflow still needs supervised
-store validation.
+`kavirtire/selectors.py`; the scheduled morning and checkout workflows still need
+supervised store validation.
+
+On 2026-10-29, a supervised Telegram run also completed login and one out-of-stock
+refresh with the headed browser. This validates that observed flow, not every
+selector below or real checkout. The owner then selected headless operation;
+manual challenges/account confirmation still require appropriate human access.
 
 | Surface | Recorded evidence / remaining limit |
 |---|---|

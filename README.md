@@ -11,10 +11,11 @@ The store's current purchase limits always take precedence.
 ## Current status
 
 The Telegram app runs on the prepared Linux workstation. The owner has confirmed
-`/start`, `/status` and copyable responses. Real Telegram login/OTP integration
-with the store, scheduled inventory observation, live checkout and usable payment
-handoff still need supervised validation. Earlier CLI live-site observations are
-historical evidence, not validation of the current Telegram workflow.
+`/start`, `/status` and copyable responses. On 2026-10-29, a supervised Telegram
+login/OTP flow reached the store and completed one out-of-stock inventory refresh
+with a visible browser and no order. The workstation is now configured headless
+at the owner's request. Scheduled morning observation, real headless login,
+live checkout and usable payment handoff still need supervised validation.
 
 The bot defaults to `DRY_RUN=true` and `LIVE_CHECKOUT_APPROVED=false`. A dry run
 can authenticate and observe inventory, but cannot select a product, change its
@@ -32,8 +33,10 @@ From the repository root:
 
 The launcher uses this checkout's `.venv`, works from any working directory and
 does not install dependencies or create a system service. Keep its terminal
-open and the machine awake. Use the graphical desktop session so manual browser
-steps are accessible. If another instance is already running, use that instance
+open and the machine awake. With `HEADLESS=false`, use a graphical desktop session
+so manual browser steps are accessible. Headless mode does not show a window;
+challenges and account-confirmation steps can still require a visible retry.
+If another instance is already running, use that instance
 or stop it gracefully before starting a replacement.
 
 Private settings live in `.env`. The prepared workstation uses installed Google
@@ -152,7 +155,7 @@ The obsolete `NATIONAL_ID` setting is ignored.
 | Setting | Default / purpose |
 |---|---|
 | `TARGET_PRODUCT`, `TARGET_SIZE`, `TARGET_QUANTITY` | Confirmed model, size and quantity 2 |
-| `HEADLESS` | `false`; visible browser for manual steps |
+| `HEADLESS` | Default `false`; local workstation now uses `true` to hide the browser |
 | `BROWSER_CHANNEL` | Empty for bundled Chromium; `chrome` for installed Chrome |
 | `BROWSER_DIRECT_CONNECTION` | `true`; store browser ignores desktop HTTP/SOCKS proxy settings |
 | `USER_DATA_DIR` | Bot example: `./data/telegram_profile` |
