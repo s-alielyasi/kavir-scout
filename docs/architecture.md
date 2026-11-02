@@ -29,12 +29,15 @@ kavirtire/
   interactions.py          Interaction protocol and terminal adapter
   workflow.py              Separate terminal-driven workflow
   diagnostics.py           Filtered logging and optional masked debug artifacts
+  run_diagnostics.py       Private rotating JSONL stage/error/structural evidence
   security.py              Host validation, secret filtering and kernel locks
   errors.py                Domain exceptions
   orchestration/
     purchase_workflow.py   Single task, transitions, deadlines and cancellation
     retailer.py            Browser adapter owned by that task
     scheduling.py          Tehran clock and date-bound 5/15/30-second windows
+    daily_login.py         Automatic 07:50 login and one admission per Tehran date
+    owner_profile.py       Private registered identity and durable daily journal
     input_broker.py        One transient correlated input/checkpoint request
     order_attempts.py      Durable nonsecret attempt marker and reconciliation
     models.py              State transitions and immutable status/result models
@@ -61,8 +64,14 @@ context stays on that async event loop. The broker correlates owner replies with
 the current run, prompt, generation and deadline, and consumes each input once.
 No credential is part of shared configuration or the status snapshot.
 
-Boot and restart are idle. `/arm` binds a run to today's Tehran date. Login can
-complete before 08:00; periodic observation starts at 08:00. New checks/admissions
+After `/start` registration, `DailyLogin` starts one run per Tehran date at
+07:50 using the privately stored identity. A late start before 08:15 catches up;
+the durable admission journal prevents a repeat after restart or failure.
+Manual `/arm` is an explicit retry and also consumes today's automatic slot.
+`/cancel` suppresses today's automatic login. Inventory tests defer automatic
+admission while active. Registration prompts are separate from the run's broker
+and expire after ten minutes; edits during a run are refused.
+Login can complete before 08:00; periodic observation starts at 08:00. New checks/admissions
 stop at 08:15. Dry run ends before selection. Live admission requires both explicit
 configuration gates and a compatible observed purchase policy. Before a possible
 order action, the durable attempt marker is written atomically with fsync.
@@ -107,6 +116,9 @@ private `.env` without copying its values into process-global environment state.
 | `.env` | Local secrets/settings; owner-only permissions on the prepared Linux host |
 | `data/bot.lock` | Kernel-held project lock; a leftover file does not mean a live process |
 | `USER_DATA_DIR/` | Persistent browser profile and profile lock; bot example uses `data/telegram_profile` |
+| `data/owner_profile.json` | Registered national ID bound to configured owner/chat; atomic private file, 0600 on POSIX |
+| `data/daily_start.json` | Last automatically/manual admitted or cancelled Tehran date; durable one-day suppression |
+| `logs/diagnostics/workflow.jsonl` | Structured evidence, 5 MiB rotation plus five backups; see [extraction](diagnostic-reports.md) |
 | `data/order_attempt.json` | Run ID, date, attempt status and explicit resolution; no identity, cookie or URL |
 | `USER_DATA_DIR/.kavir-session.json` | Optional CLI-only merchant cookie backup; no origin storage export |
 | `logs/kavirtire.log` | Filtered runtime diagnostics; bot HTTP framework payloads are suppressed |
@@ -165,3 +177,22 @@ manual challenges/account confirmation still require appropriate human access.
 Record new live evidence separately, update only supported selectors, and run
 the corresponding fixture regressions. Do not infer a successful live purchase
 from a passing test or a login that worked in an earlier deployment.
+
+## Timezone and diagnostics ownership
+
+`TehranClock.now()` explicitly uses `ZoneInfo('Asia/Tehran')`. The scheduler
+normalizes injected aware clocks with `in_tehran()`, uses the Tehran date and
+computes login/start/cutoff with the same zone. European host timezone and DST
+do not shift the schedule; the OS clock must still be synchronized. Elapsed
+timeouts/cadence use a monotonic clock. No host timezone change or cron is needed.
+
+`RunDiagnostics` follows a run through a context variable. Retailer/login/shop/
+checkout operation wrappers and workflow transitions write evidence; manual
+checkpoints capture bounded structural evidence from the merchant only. HTTP
+403/429 events and Telegram transport/update failures have payload-free records.
+Exception classes and traceback locations are recorded without exception strings,
+locals or third-party call payloads. Page evidence includes static selector
+counts and control types/states, without arbitrary text or attribute values.
+Bank DOM is excluded. This limits what can be diagnosed without a supervised
+page inspection. A report-storage failure emits a generic console warning and
+does not prevent cancellation.

@@ -82,6 +82,38 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.service.checkout.assert_not_awaited()
         self.assertFalse(self.controller.attempts.blocked())
 
+    async def test_stored_identity_is_used_without_requesting_it_again(self):
+        self.controller.profile.save('0012345678')
+        await self.controller.test_inventory(self.owner)
+        await self.settle()
+        self.service.authenticate.assert_awaited_once_with('0012345678')
+        self.transport.request_national_id.assert_not_awaited()
+
+    async def test_automatic_0750_login_uses_saved_identity_then_waits_for_stock_window(self):
+        from kavirtire.orchestration.daily_login import DailyLogin
+        self.controller.profile.save('0012345678')
+        self.clock.current = self.clock.current.replace(hour=7, minute=50)
+        authenticated = []
+        async def authenticate(identity):
+            authenticated.append((identity, self.clock.now().strftime('%H:%M')))
+        self.service.authenticate.side_effect = authenticate
+        await DailyLogin(self.controller).tick()
+        await self.settle()
+        self.assertEqual(authenticated, [('0012345678', '07:50')])
+        self.assertEqual(self.observed[0][0].strftime('%H:%M'), '08:00')
+        self.transport.request_national_id.assert_not_awaited()
+        self.service.checkout.assert_not_awaited()
+
+    async def test_cancel_suppresses_today_and_remains_available_with_corrupt_journal(self):
+        from kavirtire.orchestration.daily_login import DailyLogin
+        self.controller.profile.save('0012345678')
+        await self.controller.cancel(self.owner)
+        self.clock.current = self.clock.current.replace(hour=7, minute=50)
+        await DailyLogin(self.controller).tick()
+        self.assertEqual(self.entered, 0)
+        self.controller.daily_admissions.path.write_text('{bad')
+        self.assertTrue((await self.controller.cancel(self.owner)).accepted)
+
     async def test_inventory_check_ignores_hours_and_finishes_for_each_stock_result(self):
         self.clock.current = self.clock.current.replace(hour=21)
         for stock in ('available', 'out_of_stock', 'target_absent'):

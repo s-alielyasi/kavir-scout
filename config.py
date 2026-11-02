@@ -123,7 +123,8 @@ class BotSettings:
                        for i, default in enumerate(('08:05:00', '08:10:00', '08:15:00'), 1)),
             intervals=tuple(int(e.get(f'POLL_WINDOW_{i}_INTERVAL', str(default)))
                             for i, default in enumerate((5, 15, 30), 1)),
-            reminder=time.fromisoformat(e.get('LOGIN_REMINDER_TIME', '07:55:00')))
+            reminder=time.fromisoformat(e.get('LOGIN_REMINDER_TIME', '07:55:00')),
+            login=time.fromisoformat(e.get('DAILY_LOGIN_TIME', '07:50:00')))
         durations = tuple(int(e.get(key, '180')) for key in (
             'OTP_INPUT_TIMEOUT_SECONDS', 'CHECKOUT_TIMEOUT_SECONDS', 'PAYMENT_HANDOFF_TTL_SECONDS'))
         if any(d <= 0 for d in durations):

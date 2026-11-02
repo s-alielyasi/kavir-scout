@@ -485,3 +485,71 @@ sent by these probes, and no retailer login, SMS request, inventory run, order
 or payment was initiated. Live retailer/headless-account checkpoints and usable
 payment handoff remain separate unverified release gates. These were targeted
 Docker startup checks, not a rerun of the full unit/browser test suite.
+
+## Owner registration, automatic Tehran login and diagnostics — 2026-11-02
+
+Implemented on `feature/daily-login-diagnostics` from `6772627`, following the
+owner's new request to persist national ID, edit it through Telegram and start
+login automatically at 07:50 Tehran. This supersedes the previous manual-only
+arming and RAM-only identity design; it does not enable live checkout.
+
+`/start` sends help followed by a protected, reply-correlated registration prompt
+when no valid identity exists. `/set_national_id` replaces it, with active-run
+refusal, a ten-minute prompt TTL, authorization/dedup and best-effort deletion.
+The private owner-bound JSON file is written atomically with fsync and mode 0600
+on POSIX. It deliberately persists the identity in plaintext for the service
+user. OTP remains transient and is not added to reports/settings.
+
+The lifecycle-owned scheduler uses `Asia/Tehran`, a durable one-date admission
+journal and the existing single worker/order barrier. Tests cover the exact
+07:50 boundary, late admission before 08:15, restart and rollback refusal, next
+day admission, corrupt/missing state, cancellation suppression, manual-arm
+consumption and inventory-test deferral. UTC and Europe/Berlin clocks in both
+winter and summer produce the same Tehran decision. A fake-clock integration
+authenticates with the stored identity at 07:50 and observes stock from 08:00.
+The host timezone need not change; an accurate synchronized system clock is
+still required. No remote server clock was inspected in this task.
+
+Structured rotating evidence is under `logs/diagnostics/workflow.jsonl`, mapped
+to `/app/logs/diagnostics/workflow.jsonl` in the existing Docker logs volume.
+Tests cover exception types/source frames without exception payloads or locals,
+Tehran/UTC timestamps, private file modes including rotation, bounded retention,
+merchant-only structural page evidence and refusing DOM inspection on bank
+pages. Notification, payment-delivery, polling, input-deletion and workflow
+failures have payload-free evidence. Extraction commands for `/opt/kavir-scout`
+are in `diagnostic-reports.md`; private identity/profile/environment files are
+explicitly excluded.
+
+An initial full run caught a new HTML fixture served with the default non-HTML
+content type; the fixture was corrected. A configuration subtest also caught
+offset-aware login time being compared before validation; timezone validation
+now precedes time ordering. Both focused browser scenarios then passed.
+
+Full permanent suite:
+
+```bash
+TEST_BROWSER_CHANNEL=chrome ./.venv/bin/python -m unittest discover -v
+```
+
+**129 tests passed in 137.253 seconds** with CPython 3.12.16 and installed Chrome.
+The browser needs execution outside the agent sandbox on this host; a launch
+inside it fails with an OS `setsockopt` restriction. Fixtures block unmatched
+page requests and use synthetic credentials/temporary profiles. The added real
+browser fixture uses saved identity, asks only for OTP, then completes one
+out-of-stock refresh with zero selection or order.
+
+After the final notification/deletion diagnostic additions and cancellation
+message clarification, **60 affected unit/orchestration/handler/application/
+scheduling/diagnostics tests passed in 4.079 seconds**. This follow-up is separate
+from the complete 129-test invocation. Compileall, Python 3.11 grammar parsing
+for 47 source/test files, pip dependency consistency, the private configuration
+validator, Bash syntax, local Markdown links, Compose schema with public example
+settings and Git whitespace checks passed.
+
+No real bot polling, Telegram message, retailer login/SMS/inventory/order/payment
+was initiated. Existing private settings and runtime profiles were not migrated
+or overwritten. This version has not been pushed, built as a new Docker image or
+applied on the VPS. The prior VPS startup evidence belongs to `6772627`. Real
+automatic morning execution, headless-account confirmation, current checkout
+selectors and usable payment handoff remain supervised validation stages.
+Windows/native Python 3.11 and a dependency vulnerability audit were not run.

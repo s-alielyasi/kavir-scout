@@ -1,4 +1,4 @@
-"""Explicit PTB lifecycle; startup remains idle and discards queued updates."""
+"""Explicit PTB lifecycle and persistent-profile daily login; discard queued updates."""
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -8,6 +8,7 @@ import signal
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, TypeHandler, filters
 from kavirtire.orchestration.purchase_workflow import PurchaseOrchestrator
+from kavirtire.orchestration.daily_login import DailyLogin
 from telegram_bot.handlers import Handlers
 from telegram_bot.interactions import TelegramInteractions
 from telegram_bot.notifications import TelegramNotifications
@@ -30,6 +31,7 @@ class BotRuntime:
     application: object
     controller: PurchaseOrchestrator
     handlers: Handlers
+    scheduler: DailyLogin | None = None
 
 
 def build_application(settings, *, service_factory=None, clock=None) -> BotRuntime:
@@ -49,19 +51,20 @@ def build_application(settings, *, service_factory=None, clock=None) -> BotRunti
                                       notifier, service_factory, clock=clock)
     handlers = Handlers(controller, app.bot, started_at=datetime.now(timezone.utc))
     app.add_handler(TypeHandler(Update, handlers.gate), group=-100)
-    for name in ('start', 'arm', 'test_inventory', 'status', 'cancel', 'resume'):
+    for name in ('start', 'set_national_id', 'arm', 'test_inventory', 'status', 'cancel', 'resume'):
         app.add_handler(CommandHandler(name, getattr(handlers, name)), group=0)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.text), group=0)
 
     async def error_handler(update, context):
         # No exception body, update, traceback, URL or token is logged.
         LOG.warning('Telegram update processing failed; payload omitted.')
+        controller.diagnostics.error('telegram_update', context.error)
         try:
             await notifier.publish('workflow_failed')
         except Exception:
             pass
     app.add_error_handler(error_handler)
-    return BotRuntime(app, controller, handlers)
+    return BotRuntime(app, controller, handlers, DailyLogin(controller))
 
 
 async def serve(runtime: BotRuntime, stop: asyncio.Event | None = None, *, test_inventory: bool = False):
@@ -69,6 +72,7 @@ async def serve(runtime: BotRuntime, stop: asyncio.Event | None = None, *, test_
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     installed = []
+    scheduler_task = None
     for signum in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(signum, stop.set)
@@ -78,6 +82,9 @@ async def serve(runtime: BotRuntime, stop: asyncio.Event | None = None, *, test_
 
     def polling_error(error):
         LOG.warning('Telegram polling unavailable; transport details omitted.')
+        diagnostics = getattr(runtime.controller, 'diagnostics', None)
+        if diagnostics:
+            diagnostics.error('telegram_polling', error)
 
     try:
         async with app:
@@ -85,16 +92,22 @@ async def serve(runtime: BotRuntime, stop: asyncio.Event | None = None, *, test_
                 await app.start()
                 await app.updater.start_polling(drop_pending_updates=True, allowed_updates=['message'],
                                                  error_callback=polling_error, bootstrap_retries=0)
-                LOG.info('Telegram ready; idle until an authorized daily /arm.')
+                LOG.info('Telegram ready; automatic daily login uses Asia/Tehran and the registered owner profile.')
                 if test_inventory:
                     receipt = await runtime.controller.test_inventory(runtime.controller.owner)
                     if not receipt.accepted:
                         LOG.warning('Explicit inventory test was not admitted; bot remains idle.')
+                scheduler = getattr(runtime, 'scheduler', None)
+                if scheduler is not None:
+                    scheduler_task = asyncio.create_task(scheduler.run(), name='daily-login')
                 await stop.wait()
             finally:
                 begin_shutdown = getattr(runtime.controller, 'begin_shutdown', None)
                 if begin_shutdown is not None:
                     begin_shutdown()
+                if scheduler_task is not None:
+                    scheduler_task.cancel()
+                    await asyncio.gather(scheduler_task, return_exceptions=True)
                 if app.updater.running:
                     await app.updater.stop()
                 try:

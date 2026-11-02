@@ -4,6 +4,7 @@ import re
 from collections.abc import Awaitable, Callable
 from playwright.async_api import Locator, Page, TimeoutError, expect
 from config import Config
+from kavirtire.run_diagnostics import diagnostic_step
 from kavirtire import selectors as S
 from kavirtire.browser import retry_navigation
 from kavirtire.diagnostics import LOG
@@ -92,6 +93,7 @@ class Shop:
                 return await checks.is_enabled() and await has_text(card, S.IN_STOCK)
         return False  # missing evidence never means available
 
+    @diagnostic_step
     async def refresh_inventory(self) -> None:
         """Wait for an observed inventory mutation, not the previous DOM snapshot."""
         await self.guard.check()
@@ -177,6 +179,7 @@ class Shop:
             await asyncio.sleep(self.config.poll_interval)
             await self.refresh_inventory()
 
+    @diagnostic_step
     async def select_target_product(self, preflight: Callable[[Locator], Awaitable[None]] | None = None) -> bool:
         """Re-query and verify the exact card before one non-retried selection."""
         card = await self.find_target_product()

@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from playwright.async_api import BrowserContext, Error, Locator, Page, TimeoutError
 from config import Config
+from kavirtire.run_diagnostics import diagnostic_step
 from kavirtire import selectors as S
 from kavirtire.diagnostics import LOG, capture_debug
 from kavirtire.errors import BotError, QuantityLimit, SafetyError
@@ -130,6 +131,7 @@ class Checkout:
         values = re.findall(r'تعداد(?: حلقه| تایر)?\s*[:：]?\s*(\d+)\b', text)
         return int(values[0]) if len(values) == 1 else None
 
+    @diagnostic_step
     async def set_quantity(self, scope: Locator | None) -> None:
         """Respect option availability, input constraints and disabled +/- buttons."""
         if not scope:
@@ -195,6 +197,7 @@ class Checkout:
         if await self.read_quantity(scope) != self.config.target_quantity:
             raise SafetyError('SAFETY CHECK FAILED: quantity differs/missing in order summary.')
 
+    @diagnostic_step
     async def verify_order(self) -> Locator:
         """Re-read all three values and reject extra items before each cart submit."""
         require_merchant(self.page)
@@ -247,6 +250,7 @@ class Checkout:
               '\n\nOpen this URL to complete payment.\n========================================')
         return url
 
+    @diagnostic_step
     async def run(self) -> str:
         """One-way transitions, with no retry of uncertain order submissions."""
         while True:

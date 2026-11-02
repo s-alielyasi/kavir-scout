@@ -43,6 +43,26 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
         self.shop = Shop(self.page, self.config, self.guard)
         self.checkout = Checkout(self.page, self.config, self.guard, self.secrets)
 
+    async def test_diagnostic_page_evidence_keeps_structure_without_private_dom_values(self):
+        import json
+        from kavirtire.run_diagnostics import RunDiagnostics
+        await self.page.route('https://kavirtire.ir/**', lambda route: route.fulfill(
+            content_type='text/html; charset=utf-8',
+            body='<input name="n_code" value="0012345678"><input autocomplete="one-time-code" value="AbCd1234">'
+                 '<button id="refresh-availability" disabled>Private Name</button><article class="product">Private Address</article>'))
+        await self.page.goto('https://kavirtire.ir/esale')
+        report = RunDiagnostics(self.config.root, 'a'*32)
+        report.page = self.page
+        await report.capture('fixture')
+        output = (self.config.root/'logs/diagnostics/workflow.jsonl').read_text()
+        record = json.loads(output)
+        self.assertEqual(record['evidence']['products'], 1)
+        self.assertTrue(record['evidence']['refresh_disabled'])
+        self.assertTrue(record['evidence']['otp_present'])
+        self.assertTrue(record['evidence']['selector_counts'])
+        for secret in ('0012345678','AbCd1234','Private Name','Private Address'):
+            self.assertNotIn(secret, output)
+
     async def asyncTearDown(self):
         await self.browser.close()
         await self.pw.stop()
@@ -118,7 +138,7 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SafetyError):
             await self.checkout.verify_order()
 
-    async def bot_flow(self, live, *, inventory_test=False):
+    async def bot_flow(self, live, *, inventory_test=False, saved_identity=False):
         quantity = 2 if live else 4
         base = BotSettings.from_env({'TELEGRAM_BOT_TOKEN': '123:fixture_abcdefghijklmnopqrstuvwxyz',
             'TELEGRAM_ALLOWED_USER_ID': '123', 'TELEGRAM_ALLOWED_CHAT_ID': '123',
@@ -165,6 +185,8 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
             yield session
         controller = PurchaseOrchestrator(settings, lambda c: TelegramInteractions(bot, c),
             TelegramNotifications(bot, settings), factory, clock=clock)
+        if saved_identity:
+            controller.profile.save('0012345678')
         handlers = Handlers(controller, bot, started_at=clock.now())
         update_id = 10
         async def respond(kind, value):
@@ -188,7 +210,8 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
                     await controller.test_inventory(AuthorizedOwner(123,123))
                 else:
                     await controller.arm(AuthorizedOwner(123,123))
-                await respond('national_id', '0012345678')
+                if not saved_identity:
+                    await respond('national_id', '0012345678')
                 await respond('otp', 'AbCd1234')
                 await asyncio.wait_for(asyncio.shield(controller._task), 10)
             self.assertEqual(controller.state, WorkflowState.COMPLETED)
@@ -216,6 +239,8 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
             for call in bot.send_message.await_args_list:
                 self.assertNotIn('0012345678', str(call))
                 self.assertNotIn('AbCd1234', str(call))
+            if saved_identity:
+                self.assertFalse(any('کد ملی ده' in call.kwargs['text'] for call in bot.send_message.await_args_list))
         finally:
             await controller.close()
 
@@ -224,6 +249,9 @@ class SafetyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_after_hours_login_and_one_inventory_refresh_stops_without_selection(self):
         await self.bot_flow(live=False, inventory_test=True)
+
+    async def test_saved_identity_real_browser_requests_only_otp_then_checks_inventory(self):
+        await self.bot_flow(live=False, inventory_test=True, saved_identity=True)
 
     async def test_telegram_login_to_single_fixture_order_and_private_gateway(self):
         await self.bot_flow(live=True)

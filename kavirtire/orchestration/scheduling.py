@@ -26,12 +26,13 @@ class Schedule:
     ends: tuple[time, ...] = (time(8, 5), time(8, 10), time(8, 15))
     intervals: tuple[int, ...] = (5, 15, 30)
     reminder: time = time(7, 55)
+    login: time = time(7, 50)
 
     def __post_init__(self):
         if (len(self.ends) != 3 or len(self.intervals) != 3
-                or not self.reminder < self.start < self.ends[0] < self.ends[1] < self.ends[2]
-                or any(i <= 0 for i in self.intervals)
-                or any(t.tzinfo is not None for t in (self.reminder, self.start, *self.ends))):
+                or any(t.tzinfo is not None for t in (self.login, self.reminder, self.start, *self.ends))
+                or not self.login < self.reminder < self.start < self.ends[0] < self.ends[1] < self.ends[2]
+                or any(i <= 0 for i in self.intervals)):
             raise ValueError('Invalid sale schedule.')
 
     def at(self, day: date, when: time) -> datetime:

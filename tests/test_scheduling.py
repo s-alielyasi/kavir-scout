@@ -39,6 +39,7 @@ class ScheduleTests(unittest.TestCase):
         for override in ({'DRY_RUN': 'maybe'}, {'TELEGRAM_ALLOWED_USER_ID': ''},
                          {'TELEGRAM_ALLOWED_CHAT_ID': '-123'}, {'TELEGRAM_BOT_TOKEN': ''},
                          {'SALE_TIMEZONE': 'UTC'}, {'POLL_WINDOW_1_END': '08:20:00'},
+                         {'DAILY_LOGIN_TIME': '08:00:00'}, {'DAILY_LOGIN_TIME': '07:50:00+01:00'},
                          {'POLL_WINDOW_2_INTERVAL': '0'}, {'OTP_INPUT_TIMEOUT_SECONDS': 'nan'},
                          {'DRY_RUN': 'false'}, {'DEBUG_ARTIFACTS_ENABLED': 'true'}):
             with self.subTest(override=tuple(override)), self.assertRaises(ValueError):
