@@ -11,6 +11,8 @@ from kavirtire.orchestration.models import (
     AuthorizedOwner, Receipt, StatusSnapshot, WorkflowState as S, validate_transition)
 from kavirtire.orchestration.order_attempts import OrderAttemptStore
 from kavirtire.orchestration.scheduling import TehranClock, in_tehran
+from kavirtire.orchestration.owner_profile import DailyAdmission, OwnerProfile
+from kavirtire.run_diagnostics import CURRENT, RunDiagnostics
 
 LOG = logging.getLogger('kavir')
 INVENTORY_TEST_TIMEOUT = 600
@@ -31,7 +33,9 @@ class RunInteractions:
     async def request_national_id(self):
         self.controller.ensure_open()
         self.controller.transition(S.WAITING_FOR_NATIONAL_ID)
-        value = await self.transport.request_national_id()
+        value = self.controller.profile.national_id()
+        if value is None:
+            value = await self.transport.request_national_id()
         self.controller.ensure_open()
         self.controller.transition(S.CHECKING_SESSION)
         return value
@@ -45,6 +49,9 @@ class RunInteractions:
         return value
 
     async def request_manual_action(self, reason):
+        self.controller.diagnostics.event('manual_checkpoint', reason=reason,
+                                          state=self.controller.state.name)
+        await self.controller.diagnostics.capture(reason)
         previous = self.controller.state
         if previous != S.PAYMENT_READY:
             self.controller.transition(S.WAITING_FOR_MANUAL_ACTION)
@@ -63,6 +70,9 @@ class PurchaseOrchestrator:
         self.owner = AuthorizedOwner(settings.allowed_user_id, settings.allowed_chat_id)
         self.broker = InputBroker(self.clock.now)
         self.attempts = attempts or OrderAttemptStore(settings.retailer.root / 'data/order_attempt.json')
+        self.profile = OwnerProfile(settings.retailer.root, settings.allowed_user_id, settings.allowed_chat_id)
+        self.daily_admissions = DailyAdmission(settings.retailer.root)
+        self.diagnostics = RunDiagnostics(settings.retailer.root)
         self.interactions_factory = interactions_factory
         self.notifications, self.service_factory = notifications, service_factory
         self.state = S.IDLE
@@ -84,6 +94,7 @@ class PurchaseOrchestrator:
         self._closing = False
         self._inventory_test = False
         self._test_deadline = None
+        self.automatic_suppressed_date = None
 
     @property
     def active(self):
@@ -93,6 +104,7 @@ class PurchaseOrchestrator:
         if self._cancel.is_set() and following not in (S.CANCELLING, S.CANCELLED):
             raise asyncio.CancelledError
         validate_transition(self.state, following)
+        self.diagnostics.event('state_transition', previous=self.state.name, following=following.name)
         self.state = following
 
     def status(self):
@@ -136,7 +148,12 @@ class PurchaseOrchestrator:
                 return Receipt(False, 'sale_window_ended')
             if self.attempts.blocked():
                 return Receipt(False, 'unresolved_order_attempt')
+            if not inventory_test:
+                self.daily_admissions.claim(now.date())
             self.run_id, self.sale_date = uuid4().hex, now.date()
+            self.diagnostics = RunDiagnostics(self.settings.retailer.root, self.run_id)
+            self.diagnostics.event('run_started', mode='inventory_test' if inventory_test else 'daily',
+                dry_run=self.settings.dry_run, sale_date=self.sale_date.isoformat())
             self.outcome = self.last_stock = self.last_check = None
             self._cancel = asyncio.Event()
             self._started = self._admitted = self._authenticated = False
@@ -156,6 +173,7 @@ class PurchaseOrchestrator:
         if self.state == S.CANCELLING:
             self.state = S.CANCELLED
         if not task.cancelled() and task.exception() is not None:
+            self.diagnostics.error('worker_cleanup', task.exception())
             self.state = S.FAILED
             self.outcome = 'cleanup_failed'
 
@@ -163,9 +181,16 @@ class PurchaseOrchestrator:
         if owner != self.owner:
             return Receipt(False, 'unauthorized')
         async with self._lock:
-            if not self.active:
+            active = self.active
+            self.automatic_suppressed_date = in_tehran(self.clock.now()).date()
+            if active:
+                self._request_cancel()
+            try:
+                self.daily_admissions.claim(self.automatic_suppressed_date)
+            except (RuntimeError, OSError) as error:
+                self.diagnostics.error('cancel_daily_admission', error)
+            if not active:
                 return Receipt(True, 'idle', self.run_id)
-            self._request_cancel()
             return Receipt(True, 'cancellation_requested', self.run_id)
 
     def _request_cancel(self):
@@ -214,8 +239,9 @@ class PurchaseOrchestrator:
     async def _notify(self, event):
         try:
             await asyncio.wait_for(self.notifications.publish(event), timeout=10)
-        except Exception:
-            pass  # no raw transport exception or parameters enter logs
+        except Exception as error:
+            self.diagnostics.error('notification_delivery', error)
+            self.diagnostics.event('notification_failed', notification=event)
 
     async def _watch_deadline(self):
         while not self._admitted:
@@ -265,6 +291,8 @@ class PurchaseOrchestrator:
                 raise
             except Exception as error:
                 failures += 1
+                self.diagnostics.error('payment_delivery', error)
+                self.diagnostics.event('payment_delivery_retry', attempt=failures)
                 delay = getattr(error, 'retry_after', min(2 ** failures, 30))
                 if hasattr(delay, 'total_seconds'):
                     delay = delay.total_seconds()
@@ -285,6 +313,7 @@ class PurchaseOrchestrator:
 
     async def _worker(self):
         self._started = True
+        diagnostic_token = CURRENT.set(self.diagnostics)
         watchdog = asyncio.create_task(self._watch_deadline())
         reminder = None if self._inventory_test else asyncio.create_task(self._remind())
         identity = ''
@@ -375,6 +404,7 @@ class PurchaseOrchestrator:
                 self.outcome = 'cancelled_order_may_exist' if self._admitted else 'cancelled'
                 self.state = S.CANCELLED
         except Exception as error:
+            self.diagnostics.error(self.state.name, error)
             LOG.warning('Workflow stopped at %s (%s); details omitted.', self.state.name, type(error).__name__)
             self.outcome = 'order_requires_reconciliation' if self._admitted else 'workflow_failed'
             if self.state != S.COMPLETED:
@@ -393,6 +423,8 @@ class PurchaseOrchestrator:
             finally:
                 if self._cancel.is_set():
                     self.state = S.CANCELLED
+                self.diagnostics.event('run_finished', state=self.state.name, outcome=self.outcome)
+                CURRENT.reset(diagnostic_token)
 
     async def close(self):
         self.begin_shutdown()

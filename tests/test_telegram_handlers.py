@@ -2,12 +2,16 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from dataclasses import replace
 from types import SimpleNamespace
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import AsyncMock
 
 from telegram import Update
 from config import BotSettings
 from kavirtire.orchestration.input_broker import InputBroker
+from kavirtire.orchestration.owner_profile import OwnerProfile
+from kavirtire.run_diagnostics import RunDiagnostics
 from kavirtire.orchestration.models import AuthorizedOwner, Receipt, StatusSnapshot, WorkflowState
 from telegram_bot.authorization import authorized
 from telegram_bot.handlers import Handlers
@@ -36,7 +40,11 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
             'TELEGRAM_ALLOWED_USER_ID': '123', 'TELEGRAM_ALLOWED_CHAT_ID': '123'})
         self.bot = AsyncMock()
         self.bot.send_message.return_value = SimpleNamespace(message_id=10)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.controller = SimpleNamespace(owner=OWNER, broker=InputBroker(), run_id='a'*32,
+            profile=OwnerProfile(Path(self.tmp.name), OWNER.user_id, OWNER.chat_id), active=False,
+            diagnostics=RunDiagnostics(Path(self.tmp.name)),
             settings=self.settings, input_deadline=lambda: datetime.now(timezone.utc)+timedelta(seconds=30),
             arm=AsyncMock(return_value=Receipt(True, 'armed')), cancel=AsyncMock(return_value=Receipt(True, 'cancellation_requested')),
             test_inventory=AsyncMock(return_value=Receipt(True, 'inventory_test_started')),
@@ -56,7 +64,7 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(authorized(candidate, OWNER, NOW))
 
     async def test_unauthorized_commands_have_no_domain_or_reply_effect(self):
-        for method in (self.handlers.arm, self.handlers.test_inventory, self.handlers.cancel, self.handlers.resume, self.handlers.status, self.handlers.text):
+        for method in (self.handlers.start, self.handlers.set_national_id, self.handlers.arm, self.handlers.test_inventory, self.handlers.cancel, self.handlers.resume, self.handlers.status, self.handlers.text):
             await method(update(uid=999), SimpleNamespace(args=[]))
         self.controller.arm.assert_not_awaited()
         self.controller.test_inventory.assert_not_awaited()
@@ -80,6 +88,7 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
             state=WorkflowState.IDLE, now=NOW, run_id=None, sale_date=None, dry_run=True,
             product=self.settings.retailer.target_product, size=self.settings.retailer.target_size,
             quantity=4, interval=None, checkpoint_id=None, outcome=None, last_stock=None, last_check=None)
+        self.controller.profile.save('0012345678')
         for i, (command, handler) in enumerate((('/start', self.handlers.start),
                                                 ('/status', self.handlers.status)), 1):
             await handler(update(command, update_id=i), None)
@@ -89,6 +98,55 @@ class TelegramTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(kwargs['link_preview_options'].is_disabled)
         await TelegramNotifications(self.bot, self.settings).publish('sale_window_ended')
         self.assertFalse(self.bot.send_message.await_args.kwargs['protect_content'])
+
+    async def test_start_sends_help_then_protected_registration_and_persists_reply(self):
+        await self.handlers.start(update('/start'), None)
+        calls = self.bot.send_message.await_args_list
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(calls[0].kwargs['protect_content'])
+        self.assertTrue(calls[1].kwargs['protect_content'])
+        self.assertIsNotNone(calls[1].kwargs['reply_markup'])
+        await self.handlers.text(update('۰۰۱۲۳۴۵۶۷۸', reply=10, update_id=2), None)
+        self.assertEqual(self.controller.profile.national_id(), '0012345678')
+        self.assertIsNone(self.handlers._identity_prompt)
+        self.bot.delete_message.assert_awaited_once()
+        self.assertNotIn('0012345678', str(self.bot.send_message.await_args_list))
+
+    async def test_registration_rejects_unrelated_invalid_expired_and_replayed_replies(self):
+        await self.handlers.start(update('/start'), None)
+        for i, (text, reply) in enumerate((('0012345678', 9), ('wrong', 10)), 2):
+            await self.handlers.text(update(text, reply=reply, update_id=i), None)
+            self.assertIsNone(self.controller.profile.national_id())
+        prompt, issued, deadline = self.handlers._identity_prompt
+        self.handlers._identity_prompt = (prompt, issued, NOW-timedelta(seconds=1))
+        await self.handlers.text(update('0012345678', reply=10, update_id=4), None)
+        self.assertIsNone(self.controller.profile.national_id())
+        await self.handlers.set_national_id(update('/set_national_id', update_id=5), None)
+        candidate = update('0012345678', reply=10, update_id=6)
+        await self.handlers.text(candidate, None)
+        await self.handlers.text(candidate, None)
+        self.assertEqual(self.controller.profile.national_id(), '0012345678')
+
+    async def test_identity_edit_survives_new_store_and_is_refused_during_run(self):
+        self.controller.profile.save('0012345678')
+        await self.handlers.set_national_id(update('/set_national_id'), None)
+        await self.handlers.text(update('0098765432', reply=10, update_id=2), None)
+        restored = OwnerProfile(Path(self.tmp.name), OWNER.user_id, OWNER.chat_id)
+        self.assertEqual(restored.national_id(), '0098765432')
+        self.controller.active = True
+        await self.handlers.set_national_id(update('/set_national_id', update_id=3), None)
+        self.assertIsNone(self.handlers._identity_prompt)
+        self.assertIn('/cancel', self.bot.send_message.await_args.kwargs['text'])
+
+    async def test_registration_save_failure_does_not_confirm_and_still_deletes_input(self):
+        await self.handlers.start(update('/start'), None)
+        from unittest.mock import patch
+        with patch.object(self.controller.profile, 'save', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                await self.handlers.text(update('0012345678', reply=10, update_id=2), None)
+        self.assertIsNone(self.controller.profile.national_id())
+        self.assertIsNotNone(self.handlers._identity_prompt)
+        self.bot.delete_message.assert_awaited_once()
 
     async def test_login_prompts_remain_protected(self):
         port = TelegramInteractions(self.bot, self.controller)

@@ -80,6 +80,33 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
             await TelegramNotifications(bot, self.settings()).payment('https://bpm.shaparak.ir/pay?token=fixture')
         self.assertNotIn('secret-fixture', str(error.exception))
 
+    async def test_daily_scheduler_starts_after_polling_and_is_cancelled_before_worker_close(self):
+        calls = []
+        stop = asyncio.Event()
+        app = MagicMock()
+        app.__aenter__ = AsyncMock(return_value=app)
+        app.__aexit__ = AsyncMock(return_value=False)
+        app.running = True
+        app.start, app.stop = AsyncMock(), AsyncMock()
+        async def polling(**kwargs):
+            calls.append('polling')
+        app.updater = SimpleNamespace(running=False, start_polling=polling, stop=AsyncMock())
+        async def scheduled():
+            self.assertEqual(calls, ['polling'])
+            calls.append('scheduler')
+            stop.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                calls.append('scheduler_stopped')
+        async def close():
+            self.assertEqual(calls[-1], 'scheduler_stopped')
+            calls.append('worker_closed')
+        runtime = SimpleNamespace(application=app, controller=SimpleNamespace(close=close),
+                                  scheduler=SimpleNamespace(run=scheduled))
+        await serve(runtime, stop)
+        self.assertEqual(calls, ['polling','scheduler','scheduler_stopped','worker_closed'])
+
     async def test_explicit_boot_test_waits_for_polling_and_is_not_an_implicit_arm(self):
         calls = []
         app = MagicMock()

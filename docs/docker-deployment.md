@@ -36,10 +36,15 @@ Telegram and the retailer; there is no inbound port to publish and no need for
 an application domain, webhook, reverse proxy or separate database. The first
 build downloads the browser image and Python dependencies.
 
-Startup and restart remain idle. Send `/start` from the allowed private chat.
-`/test_inventory` explicitly starts one observation-only login/inventory run;
-`/arm` admits today's scheduled run. A restart does not restore a previously
-armed run. Scheduling uses `Asia/Tehran`; keep the server clock synchronized.
+Send `/start` from the allowed private chat and reply to the second message with
+national ID; `/set_national_id` edits it. Once registered, daily login starts
+automatically at 07:50 Tehran. `DAILY_LOGIN_TIME` defaults to `07:50:00`.
+A restart between 07:50 and 08:15 catches up if today's persistent slot is unused.
+A consumed slot is never retried automatically; `/arm` remains a deliberate
+manual retry. `/cancel` suppresses today's automatic slot as well as cancelling
+an active worker. `/test_inventory` remains an explicit observation-only check.
+Scheduling explicitly uses `Asia/Tehran` and Tehran dates, independently of the
+European host timezone/DST. Keep the server clock synchronized.
 
 ## Runtime settings and persistent state
 
@@ -58,12 +63,14 @@ from another installation, give this user access to the restored files.
 
 | Compose volume | Container path | Purpose |
 |---|---|---|
-| `kavir-data` | `/app/data` | Browser profile, process/profile locks and `order_attempt.json` |
-| `kavir-logs` | `/app/logs` | Application log file |
+| `kavir-data` | `/app/data` | Browser profile, process/profile locks, private `owner_profile.json`, `daily_start.json` and `order_attempt.json` |
+| `kavir-logs` | `/app/logs` | Application log and rotating `diagnostics/workflow.jsonl` reports |
 
 Compose prefixes actual volume names with the project name. Reuse the same
 project name and volumes when updating. Preserve the **whole data volume**,
-including the unresolved-order barrier, rather than only the browser profile.
+including the identity, daily admission journal and unresolved-order barrier,
+rather than only the browser profile. Registered identity is plaintext accessible
+to the service user, stored atomically with POSIX mode 0600.
 Treat profile backups as private. Stop the service before backing up or restoring
 browser state. A persistent profile does not guarantee that the retailer keeps a
 session valid or that a profile copied from another OS/device can be reused.
@@ -95,8 +102,8 @@ that server.
 
 The service receives SIGTERM on stop. `init: true` reaps child processes, the
 60-second stop grace period allows application/browser cleanup, and
-`restart: unless-stopped` brings the bot back in idle state after an unexpected
-exit or host restart.
+`restart: unless-stopped` brings the bot back after an unexpected exit or host
+restart. Registered identity and daily admission state determine the next login.
 
 Pull an update and rebuild while retaining the same volumes:
 
@@ -153,3 +160,14 @@ authentication/polling and graceful stop/start were verified on the European
 Ubuntu 26.04 VPS on 2026-11-02. The service was left running in observation-only
 idle mode. These startup checks did not log into the retailer or validate live
 checkout. See the dated [verification record](verification.md).
+
+## Extract diagnostics from the deployed server
+
+The stable container path is `/app/logs/diagnostics/workflow.jsonl` (plus `.1`
+through `.5`) in the existing logs volume. The host installation root is
+`/opt/kavir-scout`; the physical Docker volume path depends on the Compose
+project name. Use `docker compose cp` as documented in the
+[diagnostic extraction guide](diagnostic-reports.md), which also describes report
+contents, rotation, timezone checks and files to exclude from an AI review.
+This version must be rebuilt/recreated on the VPS before these new paths and
+automatic registration/login behavior are available there.

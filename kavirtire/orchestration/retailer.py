@@ -1,5 +1,6 @@
 """Browser adapter owned exclusively by the admitted workflow task."""
 from contextlib import asynccontextmanager
+from kavirtire.run_diagnostics import CURRENT, diagnostic_step
 import re
 
 from kavirtire import selectors as S
@@ -43,6 +44,7 @@ class RetailerSession:
             if not self.dry_run:
                 raise
 
+    @diagnostic_step
     async def authenticate(self, identity):
         try:
             if not self.opened:
@@ -66,6 +68,7 @@ class RetailerSession:
             except BotError:
                 await self.interactions.request_manual_action('purchase_page_unknown')
 
+    @diagnostic_step
     async def observe(self, *, refresh=False):
         await self.guard.check()
         if await self.shop.session_expired():
@@ -84,6 +87,7 @@ class RetailerSession:
             return 'available'
         return 'out_of_stock' if await self.shop.find_target_product() else 'target_absent'
 
+    @diagnostic_step
     async def preflight_live(self):
         if self.dry_run:
             raise SafetyError('Dry run cannot enter checkout.')
@@ -95,6 +99,7 @@ class RetailerSession:
             raise SafetyError('Target stock changed before order admission.')
         await self.order.watcher.find()
 
+    @diagnostic_step
     async def checkout(self, *, before_selection):
         if self.dry_run:
             raise SafetyError('Dry run cannot select a product.')
@@ -126,4 +131,11 @@ class RetailerSession:
 @asynccontextmanager
 async def browser_session(config, interactions, *, dry_run=True):
     async with persistent_browser(config) as (context, page):
-        yield RetailerSession(config, page, interactions, dry_run=dry_run)
+        diagnostic = CURRENT.get()
+        if diagnostic is not None:
+            diagnostic.page = page
+        try:
+            yield RetailerSession(config, page, interactions, dry_run=dry_run)
+        finally:
+            if diagnostic is not None:
+                diagnostic.page = None

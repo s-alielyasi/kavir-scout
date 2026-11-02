@@ -19,14 +19,16 @@ live checkout and usable payment handoff still need supervised validation.
 
 The bot defaults to `DRY_RUN=true` and `LIVE_CHECKOUT_APPROVED=false`. A dry run
 can authenticate and observe inventory, but cannot select a product, change its
-quantity, add it to the cart or create an order. Starting or restarting the bot
-does not arm a run.
+quantity, add it to the cart or create an order. After owner registration, daily
+login starts automatically at 07:50 Tehran, including after a process restart.
+This behavior supersedes the earlier manual-only daily arming design.
 
 ## Deploy on a server with Docker
 
 Docker Compose runs the Telegram app with bundled Chromium in headless mode.
 It keeps browser state and the order-attempt barrier in persistent volumes and
-starts idle after every restart. No public port, domain or webhook is needed.
+retains the registered owner identity and daily admission journal across restarts.
+No public port, domain or webhook is needed.
 
 ```bash
 cp -n .env.docker.example .env.docker
@@ -37,15 +39,18 @@ docker compose logs -f --tail=100
 ```
 
 Stop any other instance using the same bot token before starting this service.
-The initial configuration is observation-only. Send `/start` and then explicitly
-use `/test_inventory` or today's `/arm` from the allowed Telegram chat.
+The initial configuration is observation-only. Send `/start`, then reply to the
+second message with the owner national ID. Daily login is automatic after saving.
+Use `/set_national_id` to edit it and `/test_inventory` for an explicit one-time check.
 See the [Docker deployment guide](docs/docker-deployment.md) for updates, storage,
 proxy settings and manual-browser limitations.
 
 On 2026-11-02, this Docker setup was built and deployed on the owner's Linux VPS.
 Headless Chromium, persistent volumes, real Telegram connectivity and graceful
-stop/start passed startup checks. The service remains idle in observation mode;
-the retailer's live checkout was not exercised.
+stop/start passed startup checks. That verification left the service idle in
+observation mode; the retailer's live checkout was not exercised. The registration,
+automatic-login and diagnostic changes described here still need deployment to
+that VPS.
 
 ## Run on the prepared Linux workstation
 
@@ -108,13 +113,22 @@ See the [operations guide](docs/telegram-operations.md) for setup and recovery.
 
 ## Daily Telegram workflow
 
-1. Start the app before 08:00 Tehran time.
-2. Send `/arm` in the allowed private chat, for example at 07:50.
-3. Reply to the current national-ID and OTP prompts. Complete any manual browser
-   challenge and confirm the account when asked. Existing sessions are checked,
-   not assumed to belong to the requested account.
-4. After authentication, the worker waits until 08:00 and begins scheduled
-   observation without another command.
+1. Keep the app running before 07:50 Tehran time. Send `/start` once and reply
+   to its second, protected message with the national ID. The app saves it in
+   private `data/owner_profile.json`; `/set_national_id` starts a replacement prompt.
+2. At 07:50 Tehran, the scheduler starts today's login automatically with that
+   identity. Reply to the current OTP prompt if authentication requires a code.
+   Complete any manual challenge or existing-account confirmation when asked.
+3. After authentication, the worker waits until 08:00 and begins scheduled
+   observation without another command. The existing dry-run/order gates apply.
+
+A late startup or registration between 07:50 and 08:15 catches up once for that
+Tehran date. `data/daily_start.json` is claimed before starting, so a restart,
+failed login or clock rollback cannot trigger another automatic attempt that day.
+Manual `/arm` remains available for a deliberate retry; it also consumes today's
+automatic slot. `/cancel` stops a run and suppresses today's automatic slot,
+including before 07:50. A one-time inventory test defers automatic admission until
+it finishes, if still before 08:15. Editing identity during a run is refused.
 
 All schedule decisions use `Asia/Tehran` and the date of the armed run:
 
@@ -128,17 +142,18 @@ All schedule decisions use `Asia/Tehran` and the date of the armed run:
 
 Checks run sequentially. Site cooldowns and slow responses can extend the spacing;
 missed checks are not replayed in a burst. In dry-run mode, detecting available
-target stock ends the run without checkout. A restart always returns to idle;
-daily arming is never restored automatically. The configured schedule is not a
+target stock ends the run without checkout. An interrupted run is not resumed;
+the persistent daily journal prevents automatically repeating it. The configured schedule is not a
 claim about the store's current sale hours.
 
 | Command | Behavior |
 |---|---|
-| `/start` | Show help and the configured target; no browser or purchase starts. |
+| `/start` | Show help, then request and store national ID if not registered. |
+| `/set_national_id` | Replace the stored identity through a protected reply prompt. |
 | `/arm` | Arm one run for today's Tehran date; reject after the cutoff. |
 | `/test_inventory` | Run one dry-run login/inventory check at any time, then stop. |
 | `/status` | Show a nonsecret, copyable status snapshot. |
-| `/cancel` | Request cancellation and bounded cleanup. |
+| `/cancel` | Request cancellation and bounded cleanup; skip automatic login today. |
 | `/resume` | Resume only when replying to the current manual checkpoint; alternatively send `/resume CHECKPOINT_ID`. |
 
 General responses can be copied and forwarded. Login prompts and payment-link
@@ -148,8 +163,8 @@ best-effort basis; Telegram is not an end-to-end encrypted credential channel.
 ## One-time inventory test
 
 With the bot running and `DRY_RUN=true`, send `/test_inventory` in the allowed
-private chat. It requests national ID and OTP through the same correlated prompts
-as the daily workflow, respects manual challenges and refresh cooldowns, then
+private chat. It uses the stored national ID (or requests one if not registered)
+and correlated OTP prompts, respects manual challenges and refresh cooldowns, then
 refreshes/checks inventory once. It reports available, unavailable or target
 absent and finishes. It never selects a product, changes quantity or enters
 checkout, even if the target is available.
@@ -168,13 +183,15 @@ first and run:
 ```
 
 This flag immediately starts the one-time test after Telegram polling is ready;
-normal startup remains idle. After the test, the bot keeps listening for commands.
+normal startup follows the registered identity and daily admission journal.
+After the test, the bot keeps listening for commands and the daily schedule.
 
 ## Configuration
 
 [.env.telegram.example](.env.telegram.example) lists all bot settings. Explicitly
 exported environment values override `.env`; relative profile paths are resolved
-against the repository root. National ID and OTP are runtime inputs, not settings.
+against the repository root. National ID is stored privately after registration; OTP remains a transient
+runtime input. Neither belongs in environment settings or logs.
 The obsolete `NATIONAL_ID` setting is ignored.
 
 | Setting | Default / purpose |
@@ -187,6 +204,7 @@ The obsolete `NATIONAL_ID` setting is ignored.
 | `TELEGRAM_PROXY_URL` | Optional HTTP(S) proxy for both Telegram HTTP clients; does not configure the store browser |
 | `DRY_RUN`, `LIVE_CHECKOUT_APPROVED` | `true`, `false`; live mode requires both an explicit configuration change and completed release gates |
 | `DEBUG_ARTIFACTS_ENABLED` | Must remain `false` for the Telegram app |
+| `DAILY_LOGIN_TIME` | `07:50:00` in `Asia/Tehran`; independent of the server timezone |
 | `OTP_INPUT_TIMEOUT_SECONDS` | 180; current input request lifetime, also bounded by the sale cutoff |
 | `CHECKOUT_TIMEOUT_SECONDS`, `PAYMENT_HANDOFF_TTL_SECONDS` | 180 each; separate bounded checkout and handoff lifetimes |
 | `GATEWAY_HOSTS` | `shaparak.ir`; HTTPS allowlist including its subdomains |
@@ -286,3 +304,14 @@ Start with the [documentation index](docs/README.md), then use the
 [current implementation status](docs/telegram-implementation-status.md) and
 [dated verification record](docs/verification.md). Original plans are historical
 design references; current behavior is described by the code and these guides.
+
+## Diagnostic reports
+
+Each run writes structured stage/operation/checkpoint/error evidence to
+`logs/diagnostics/workflow.jsonl`, rotated at 5 MiB with five backups. The Docker
+path is `/app/logs/diagnostics/workflow.jsonl`, in the existing logs volume.
+Reports contain Tehran/UTC timestamps, run IDs, exception classes and source
+locations, durations and limited structural page evidence/selector counts. Raw
+exception payloads, DOM text/HTML/screenshots, credentials, cookies and payment
+URLs are excluded. See [report extraction](docs/diagnostic-reports.md) for exact
+server commands and what to provide for an AI-assisted correction.

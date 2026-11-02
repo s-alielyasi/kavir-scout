@@ -2,6 +2,7 @@
 import asyncio
 from playwright.async_api import Page, TimeoutError, Error
 from config import Config
+from kavirtire.run_diagnostics import diagnostic_step
 from kavirtire import selectors as S
 from kavirtire.browser import save_session
 from kavirtire.diagnostics import LOG
@@ -74,6 +75,7 @@ class Login:
             await asyncio.sleep(0.1)
         await self.manual('authentication_response_uncertain')
 
+    @diagnostic_step
     async def submit_national_id(self, national_id: str | None = None) -> bool:
         target = await field(self.page, S.NATIONAL_ID_LABELS, S.NATIONAL_ID_CSS)
         if not target:
@@ -113,6 +115,7 @@ class Login:
         except Error:
             pass
 
+    @diagnostic_step
     async def submit_otp(self) -> bool:
         target = await field(self.page, S.OTP_LABELS, S.OTP_CSS)
         split = self.page.locator(S.OTP_SPLIT + ':visible')
@@ -159,6 +162,7 @@ class Login:
                     await self.scrub(split.nth(index))
         return True
 
+    @diagnostic_step
     async def ensure(self, national_id: str | None = None) -> None:
         if await self.guard.blocked():
             national_id = None

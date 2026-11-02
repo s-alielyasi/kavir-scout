@@ -8,6 +8,7 @@ directory separates current guidance from the original plans and dated evidence.
 | Document | Purpose |
 |---|---|
 | [Docker deployment](docker-deployment.md) | Server setup, persistent volumes, proxy connectivity and recovery |
+| [Diagnostic reports](diagnostic-reports.md) | Server log paths, privacy, rotation and extraction for correction |
 | [Architecture](architecture.md) | Package responsibilities, runtime data, ownership boundaries and live selector provenance |
 | [Telegram operations](telegram-operations.md) | Persian setup, early login, schedule, commands, manual steps and order recovery |
 | [Implementation status](telegram-implementation-status.md) | Current implementation, owner-confirmed checks and remaining supervised validation |

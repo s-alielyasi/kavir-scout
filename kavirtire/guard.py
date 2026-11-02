@@ -9,6 +9,7 @@ from kavirtire.security import merchant_url
 from kavirtire.errors import SafetyError
 from kavirtire.interactions import InteractionPort, TerminalInteraction
 from kavirtire.ui import has_text, terminal, settle
+from kavirtire.run_diagnostics import CURRENT
 
 
 class HumanGuard:
@@ -23,6 +24,10 @@ class HumanGuard:
     def observe_response(self, response: Response) -> None:
         if merchant_url(response.url) and response.request.resource_type in ('document', 'xhr', 'fetch'):
             if response.status in (403, 429):
+                diagnostic = CURRENT.get()
+                if diagnostic is not None:
+                    diagnostic.event('retailer_http_block', status=response.status,
+                                     resource_type=response.request.resource_type)
                 self.blocked_status = response.status
                 self.blocked_request = response.url
                 raw = response.headers.get('retry-after', '')

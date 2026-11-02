@@ -4,6 +4,9 @@ from telegram.error import RetryAfter, TelegramError
 from kavirtire.security import gateway_url
 
 EVENTS = {
+    'automatic_login_started': 'ورود خودکار روزانه با کد ملی ذخیره‌شده آغاز شد. کد پیامک را فقط در پاسخ به پیام درخواست OTP بفرستید. زمان‌بندی به وقت تهران است.',
+    'automatic_login_failed': 'شروع خودکار ورود با مشکل روبه‌رو شد؛ /status و گزارش logs/diagnostics/workflow.jsonl را بررسی کنید.',
+    'unresolved_order_attempt': 'ورود خودکار امروز به علت تلاش سفارش تعیین‌تکلیف‌نشده متوقف شد؛ بازیابی محلی لازم است.',
     'inventory_test_available': 'تست موجودی تمام شد: محصول هدف موجود بود. هیچ محصولی انتخاب و هیچ سفارشی ثبت نشد.',
     'inventory_test_out_of_stock': 'تست موجودی تمام شد: محصول هدف شناسایی شد ولی ناموجود بود. هیچ محصولی انتخاب و هیچ سفارشی ثبت نشد.',
     'inventory_test_target_absent': 'تست موجودی تمام شد: محصول هدف در فهرست فعلی پیدا نشد. هیچ محصولی انتخاب و هیچ سفارشی ثبت نشد.',
