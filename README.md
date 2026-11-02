@@ -22,6 +22,31 @@ can authenticate and observe inventory, but cannot select a product, change its
 quantity, add it to the cart or create an order. Starting or restarting the bot
 does not arm a run.
 
+## Deploy on a server with Docker
+
+Docker Compose runs the Telegram app with bundled Chromium in headless mode.
+It keeps browser state and the order-attempt barrier in persistent volumes and
+starts idle after every restart. No public port, domain or webhook is needed.
+
+```bash
+cp -n .env.docker.example .env.docker
+chmod 600 .env.docker
+# Fill in the bot token and allowed private user/chat IDs in .env.docker.
+docker compose up -d --build
+docker compose logs -f --tail=100
+```
+
+Stop any other instance using the same bot token before starting this service.
+The initial configuration is observation-only. Send `/start` and then explicitly
+use `/test_inventory` or today's `/arm` from the allowed Telegram chat.
+See the [Docker deployment guide](docs/docker-deployment.md) for updates, storage,
+proxy settings and manual-browser limitations.
+
+On 2026-11-02, this Docker setup was built and deployed on the owner's Linux VPS.
+Headless Chromium, persistent volumes, real Telegram connectivity and graceful
+stop/start passed startup checks. The service remains idle in observation mode;
+the retailer's live checkout was not exercised.
+
 ## Run on the prepared Linux workstation
 
 From the repository root:

@@ -1,0 +1,30 @@
+services:
+  kavir-scout:
+    image: kavir-scout:local
+    build:
+      context: .
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    shm_size: 1gb
+    env_file:
+      - .env.docker
+    environment:
+      # Use the bundled Linux browser and a profile inside the persistent volume.
+      HEADLESS: "true"
+      BROWSER_CHANNEL: ""
+      USER_DATA_DIR: /app/data/telegram_profile
+    volumes:
+      - kavir-data:/app/data
+      - kavir-logs:/app/logs
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  kavir-data:
+  kavir-logs:

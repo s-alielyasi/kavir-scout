@@ -407,3 +407,81 @@ Real headless store login, a complete morning session, browser-written personal
 data audit, current checkout selectors and a usable real payment handoff remain
 pending. This review does not enable live ordering, validate Windows/native
 Python 3.11 or constitute an online dependency vulnerability audit.
+
+## Docker deployment packaging — 2026-11-02
+
+Updated the clean Windows checkout from `fd9c3ad` to `41f07d5` with a fast-forward
+before implementing the owner's request for Docker deployment support.
+
+Added an image based on Playwright Python `v1.64.1-noble`, installing the existing
+constrained dependencies and running `python -m telegram_bot` as `pwuser`.
+Compose loads a separate ignored `.env.docker`, uses bundled headless Chromium,
+retains the complete data directory and application logs in named volumes, and
+configures init, restart, shared memory and a 60-second stop grace period.
+Private/runtime directories are excluded from the build context. Added the
+server deployment guide and linked it from the README and documentation index.
+
+The owner explicitly requested no further tests. No image build, container
+startup, real Telegram connection, retailer login or order was performed for
+this implementation. Static file review and Git whitespace/ignore checks are
+separate from runtime validation. Existing live-checkout gates remain unchanged.
+
+## Docker startup verification requested — 2026-11-02
+
+The owner subsequently authorized a build and startup check, superseding the
+earlier request to skip tests. Private Telegram settings entered into the tracked
+example were moved into ignored `.env.docker`; the copied credential values were
+cleared from the example. The local Docker configuration explicitly remains
+`DRY_RUN=true`, `LIVE_CHECKOUT_APPROVED=false`.
+
+Docker Engine 29.8.2 and Compose v5.6.0 are available. `docker compose config
+--quiet` passed. The build transferred approximately 150 kB of source context,
+excluding private configuration/runtime files, and resolved the specified base
+image. Its large browser layer download did not complete on the local network;
+no final application image or running application container was produced.
+
+Public Telegram HTTPS connectivity also timed out. The owner explained that the
+local Iranian network cannot reach Telegram and requested testing from their
+European VPS instead. The local build was stopped while awaiting SSH connection
+details. A source-only deployment archive and an offline browser/volume smoke
+probe are prepared under ignored `.tools/`; they contain no private environment
+file or production browser profile. Server build/startup, Telegram polling and
+graceful stop remain unverified until that connection is provided. No retailer
+login, SMS, inventory run or purchase was initiated.
+
+## Successful VPS Docker build and deployment — 2026-11-02
+
+With the owner's supplied SSH access, deployed the public source archive and a
+separately transferred private `.env.docker` to `/opt/kavir-scout` on their
+European x86_64 Ubuntu 26.04 VPS. Installed Ubuntu packages `docker.io`,
+`docker-compose-v2` and `docker-buildx`; Docker Engine is 29.1.3, Compose is
+2.40.3 and the Docker service is enabled at boot. Private configuration is owned
+by root with mode 0600 and is excluded from the application image.
+
+Completed checks:
+
+- `docker compose config --quiet` passed on the VPS.
+- `docker compose --progress plain build` returned exit code 0 and produced
+  `kavir-scout:local` (manifest list beginning `35cd2049fb2e`).
+- `docker compose run -T --rm --no-deps kavir-scout --check-config` passed without
+  exposing credentials or starting a browser.
+- A temporary smoke probe launched `persistent_browser()` headlessly as
+  `pwuser` (UID 1001), rendered an offline HTML fixture and closed Chromium.
+  All page requests were blocked; the profile used a temporary directory.
+- Probe files in both named volumes remained readable from a second container.
+  That check returned exit code 0 and removed its temporary marker files.
+- `docker compose up -d` returned exit code 0. The app logged
+  `Telegram ready; idle until an authorized daily /arm.` at 16:50:34 Tehran.
+  A read-only `getMe` API check confirmed real Telegram authentication.
+- `docker compose stop` completed in approximately four seconds with app exit
+  code 0 and `OOMKilled=false`. A subsequent start returned exit code 0 and
+  logged readiness again at 16:53:27 Tehran.
+- Final inspection showed `Status=running`, `RestartCount=0`, `User=pwuser`
+  and `RestartPolicy=unless-stopped`.
+
+The service remains running with `DRY_RUN=true`,
+`LIVE_CHECKOUT_APPROVED=false` and no automatic arming. No Telegram message was
+sent by these probes, and no retailer login, SMS request, inventory run, order
+or payment was initiated. Live retailer/headless-account checkpoints and usable
+payment handoff remain separate unverified release gates. These were targeted
+Docker startup checks, not a rerun of the full unit/browser test suite.
