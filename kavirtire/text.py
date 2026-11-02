@@ -39,5 +39,6 @@ def matches_product(text: str, product: str, size: str) -> bool:
 
 
 def parse_quantity(value: str) -> int | None:
-    numbers = re.findall(r'\d+', normalize_text(value))
-    return int(numbers[0]) if len(numbers) == 1 else None
+    value = normalize_text(value)
+    match = re.fullmatch(r'([0-9]+)(?:\s*(?:حلقه|تایر|عدد))?', value)
+    return int(match[1]) if match else None

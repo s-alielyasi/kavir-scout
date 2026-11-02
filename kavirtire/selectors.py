@@ -16,6 +16,8 @@ OTP_LABELS = ('کد تایید', 'کد تأیید', 'کد یکبار مصرف')
 OTP_CSS = ('#code-verification', 'input[autocomplete="one-time-code"]', 'input[name="otp"]')
 OTP_VALUE_PATTERN = r'(?:[0-9]{4,8}|[A-Za-z0-9]{8})'
 OTP_SPLIT = 'input[maxlength="1"][inputmode="numeric"]'
+AUTH_REJECTION = ('کد تایید نامعتبر', 'کد وارد شده صحیح نیست', 'کد منقضی',
+                  'رمز اشتباه', 'کد ملی نامعتبر', 'کد ملی صحیح نیست')
 PROFILE_SIGNALS = ('خروج از حساب', 'خروج', 'پروفایل', 'حساب کاربری')
 SHOP = ('خرید', 'خرید تایر', 'خرید اینترنتی')
 TERMS = ('قوانین', 'شرایط', 'می پذیرم', 'موافقم')
@@ -79,7 +81,8 @@ WATCH_INVENTORY_JS = """(root) => {
   window.__kavirRefreshChanged = false;
   const parent = root.parentElement || root;
   window.__kavirRefreshObserver = new MutationObserver(records => {
-    if (records.some(r => root.contains(r.target) ||
+    if (records.some(r => (root.contains(r.target) &&
+      (r.type !== 'attributes' || ['hidden','disabled','aria-disabled','aria-hidden','data-stock'].includes(r.attributeName))) ||
       [...r.removedNodes, ...r.addedNodes].some(n => n === root))) {
       window.__kavirRefreshChanged = true;
     }

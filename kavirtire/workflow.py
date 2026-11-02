@@ -1,6 +1,7 @@
 """Explicit workflow states and a single order attempt per process."""
 from enum import Enum, auto
 import re
+from uuid import uuid4
 from playwright.async_api import Error
 from config import Config
 from kavirtire import selectors as S
@@ -14,6 +15,8 @@ from kavirtire.security import SecretFilter, merchant_url
 from kavirtire.shop import Shop
 from kavirtire.text import normalize_text
 from kavirtire.ui import terminal
+from kavirtire.orchestration.order_attempts import OrderAttemptStore
+from kavirtire.orchestration.scheduling import TehranClock
 
 
 class State(Enum):
@@ -41,6 +44,10 @@ def enforce_published_limit(text: str, quantity: int) -> None:
 
 async def run(config: Config, secrets: SecretFilter) -> None:
     state = State.START
+    attempts = OrderAttemptStore(config.root / 'data/order_attempt.json')
+    if attempts.blocked():
+        raise SafetyError('An unresolved order attempt blocks a new CLI run. See the recovery guide.')
+    run_id = uuid4().hex
 
     def transition(next_state: State) -> None:
         nonlocal state
@@ -87,9 +94,10 @@ async def run(config: Config, secrets: SecretFilter) -> None:
                               or await checkout.read_quantity(candidate) is not None):
                 await checkout.set_quantity(candidate)
                 await checkout.verify_candidate(candidate)
+            await checkout.watcher.prepare()
+            attempts.begin(run_id, TehranClock().now().date())
             verified_purchase = await shop.select_target_product(checkout.verify_candidate)
             transition(State.SET_QUANTITY)
-            await guard.check()
             if await checkout.watcher.find():
                 # No interaction with a gateway, and no false success for a
                 # selection that bypassed a verified order summary.
@@ -98,13 +106,15 @@ async def run(config: Config, secrets: SecretFilter) -> None:
                                       'do not start another order.')
                 await checkout.capture_gateway(await checkout.watcher.find())
             else:
+                await guard.check()
                 await checkout.set_quantity(await shop.find_target_product())
                 transition(State.CHECKOUT)
                 await checkout.run()
+            attempts.handed_off(run_id)
             transition(State.PAYMENT_GATEWAY)
             await terminal('Payment URL captured. Press Enter to close browser... ')
             transition(State.DONE)
         except Exception:
-            if merchant_url(page.url) and not await checkout.watcher.find():
+            if config.debug_artifacts and state not in (State.LOGIN, State.CHECK_SESSION) and merchant_url(page.url):
                 await capture_debug(page, config.root, secrets)
             raise

@@ -6,7 +6,6 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from playwright.async_api import async_playwright
-from config import Config
 from kavirtire.errors import AmbiguousElement, BotError, QuantityLimit, SafetyError
 from kavirtire.guard import HumanGuard
 from kavirtire.security import SecretFilter
@@ -15,31 +14,25 @@ from kavirtire.checkout import Checkout, GatewayWatcher
 from kavirtire.login import Login
 from kavirtire.workflow import enforce_published_limit
 from kavirtire.ui import button
-
-PRODUCT = 'Perfect (R14) KB27'
-SIZE = '185/65R14'
-
-
-def row(size=SIZE, quantity='4', maximum='4'):
-    return (f'<article>{PRODUCT} <span>{size}</span>'
-            f'<label>تعداد<input type="number" value="{quantity}" max="{maximum}"></label>'
-            '<button>انتخاب</button></article>')
+from tests.browser_support import PRODUCT, SIZE, fixture_config, offline_context, row
 
 
 class BrowserTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=True)
-        self.context = await self.browser.new_context()
+        base = fixture_config()
+        self.browser = await self.playwright.chromium.launch(headless=True, channel=base.browser_channel)
+        self.context = await offline_context(self.browser)
         self.page = await self.context.new_page()
         self.page.set_default_timeout(1000)
         self.tmp = tempfile.TemporaryDirectory()
-        self.config = replace(Config.from_env({}), root=Path(self.tmp.name), timeout_ms=1000)
+        self.config = replace(base, root=Path(self.tmp.name),
+                              user_data_dir=Path(self.tmp.name) / 'profile', timeout_ms=1000)
         self.guard = HumanGuard(self.page)
         self.secrets = SecretFilter()
         self.shop = Shop(self.page, self.config, self.guard)
         self.checkout = Checkout(self.page, self.config, self.guard, self.secrets)
-        self.input_patch = patch('kavirtire.checkout.terminal', new=AsyncMock(
+        self.input_patch = patch.object(self.guard.interactions, 'request_manual_action', new=AsyncMock(
             side_effect=AssertionError('Unexpected manual input in fixture')))
         self.input_patch.start()
 
@@ -244,7 +237,8 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         async def fixture_context(config):
             yield self.context, self.page
 
-        with patch('kavirtire.workflow.persistent_browser', fixture_context), \
+        with patch('kavirtire.interactions.TerminalInteraction.request_manual_action', new=AsyncMock()), \
+             patch('kavirtire.workflow.persistent_browser', fixture_context), \
              patch('kavirtire.workflow.terminal', new=AsyncMock(return_value='')):
             await run(self.config, self.secrets)
         self.assertEqual((self.config.root / 'payment_url.txt').read_text().strip(),
@@ -255,13 +249,34 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         config = replace(self.config, headless=True, user_data_dir=self.config.root / 'profile')
         async with persistent_browser(config) as (context, page):
             await context.add_cookies([{'name': 'fixture', 'value': 'saved', 'url': 'https://kavirtire.ir'}])
-        self.assertTrue((config.root / 'data/storage_state.json').is_file())
+        self.assertTrue((config.user_data_dir / '.kavir-session.json').is_file())
         async with persistent_browser(config) as (context, page):
             cookies = await context.cookies('https://kavirtire.ir')
             self.assertIn('fixture', [item['name'] for item in cookies])
 
+    async def test_direct_browser_overrides_proxy_without_changing_process_environment(self):
+        from playwright.async_api import BrowserType
+        from kavirtire.browser import persistent_browser
+        import os
+        original = BrowserType.launch_persistent_context
+        observed = []
+        async def launch(browser_type, *args, **kwargs):
+            observed.append(kwargs.get('args', []))
+            return await original(browser_type, *args, **kwargs)
+        with patch.dict(os.environ, {'HTTPS_PROXY': 'http://127.0.0.1:1'}), \
+             patch.object(BrowserType, 'launch_persistent_context', launch):
+            for direct in (True, False):
+                config = replace(self.config, headless=True, session_backup=False,
+                    browser_direct_connection=direct,
+                    user_data_dir=self.config.root / ('direct' if direct else 'system'))
+                async with persistent_browser(config) as (context, page):
+                    await page.set_content('<title>Local routing check</title>')
+                    self.assertEqual(await page.title(), 'Local routing check')
+                self.assertEqual('--no-proxy-server' in observed[-1], direct)
+                self.assertEqual(os.environ['HTTPS_PROXY'], 'http://127.0.0.1:1')
+
     async def test_login_national_id_and_terminal_otp(self):
-        config = replace(self.config, national_id='0012345678')
+        config = self.config
         login = Login(self.page, config, self.guard, self.secrets)
         # A local fixture, not the site's SMS endpoint.
         await self.page.set_content('''<label>کد ملی<input name="n_code"></label>
@@ -269,10 +284,10 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         otp_form = '''<label>کد تایید<input autocomplete="one-time-code"></label>
             <button onclick="document.body.innerHTML='<a>خروج از حساب</a><button>خرید</button>'">تایید</button>'''
         await self.page.evaluate('(html) => window.otpForm=html', otp_form)
-        with patch('kavirtire.login.terminal', new=AsyncMock(return_value='12345')):
-            await login.ensure()
+        with patch.object(login.interactions, 'request_otp', new=AsyncMock(return_value='12345')):
+            await login.ensure('0012345678')
         self.assertTrue(await login.is_logged_in())
-        self.assertTrue((config.root / 'data/storage_state.json').exists())
+        self.assertTrue((config.user_data_dir / '.kavir-session.json').exists())
 
     async def test_monitor_stops_on_session_expiration(self):
         from kavirtire.errors import SessionExpired
@@ -302,7 +317,7 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
             await self.page.locator('p').evaluate('(el) => el.remove()')
             return ''
 
-        with patch('kavirtire.guard.terminal', side_effect=human_completes):
+        with patch.object(self.guard.interactions, 'request_manual_action', side_effect=human_completes):
             await self.shop.refresh_inventory()
         self.assertTrue(await self.page.evaluate('window.refreshed'))
 

@@ -11,24 +11,30 @@ from kavirtire.security import SecretFilter, gateway_url, InstanceLock
 class CoreTests(unittest.TestCase):
     def test_defaults(self):
         c = Config.from_env({})
-        self.assertEqual((c.poll_interval, c.target_quantity), (5, 4))
+        self.assertEqual((c.poll_interval, c.target_quantity), (5, 2))
         self.assertFalse(c.headless)
+        self.assertIsNone(c.browser_channel)
+        self.assertTrue(c.browser_direct_connection)
+        self.assertFalse(Config.from_env({'BROWSER_DIRECT_CONNECTION': 'false'}).browser_direct_connection)
+        self.assertEqual(Config.from_env({'BROWSER_CHANNEL': 'chrome'}).browser_channel, 'chrome')
         self.assertEqual(c.target_product, 'Perfect (R14) KB27')
         self.assertEqual(c.target_size, '185/65R14')
-        self.assertEqual(c.national_id, '')
+        self.assertFalse(hasattr(c, 'national_id'))
 
     def test_invalid_config(self):
         for values in ({'POLL_INTERVAL': '0'}, {'POLL_INTERVAL': 'nan'},
                        {'POLL_INTERVAL': 'inf'}, {'TARGET_QUANTITY': '0'},
                        {'TARGET_QUANTITY': 'four'}, {'HEADLESS': 'maybe'},
-                       {'NATIONAL_ID': '123'}, {'TARGET_SIZE': ''},
+                       {'BROWSER_CHANNEL': 'unknown'},
+                       {'BROWSER_DIRECT_CONNECTION': 'maybe'},
+                       {'TARGET_SIZE': ''},
                        {'MAX_RETRIES': '0'}, {'GATEWAY_HOSTS': '*'}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 Config.from_env(values)
 
     def test_national_id_and_relative_paths(self):
         c = Config.from_env({'NATIONAL_ID': '۰۰۱۲۳۴۵۶۷۸', 'USER_DATA_DIR': './custom'})
-        self.assertEqual(c.national_id, '0012345678')
+        self.assertFalse(hasattr(c, 'national_id'))
         self.assertTrue(c.user_data_dir.is_absolute())
         self.assertEqual(c.user_data_dir.name, 'custom')
 
